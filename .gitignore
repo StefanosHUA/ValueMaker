@@ -1,0 +1,8 @@
+service_account.json
+.hackastat_chrome/
+__pycache__/
+*.pyc
+.env
+.venv/
+venv/
+~$*

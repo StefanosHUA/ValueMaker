@@ -1,0 +1,5 @@
+Player,Stat,Line,Odds,Model_Hit_%,Implied_%,EV_%,Stake_EUR,Kelly_full_%,Quarter_Kelly_%,Capped,Verdict,Sheet_Result,Error
+Andres Feliz,Pts,7.5,1.9,77.44,52.63,47.13,5.0,52.36,13.09,YES,VALUE BET,Yes,
+Andres Feliz,Pts,10+,2.77,63.71,36.1,76.46,5.0,43.2,10.8,YES,VALUE BET,No,
+Braxton Key,Pts,7.5,1.78,90.03,56.18,60.25,5.0,77.24,19.31,YES,VALUE BET,,
+Braxton Key,Pts,10+,2.7,65.31,37.04,76.33,5.0,44.9,11.23,YES,VALUE BET,,
