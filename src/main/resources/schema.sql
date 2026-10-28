@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS team_game (
     opp TEXT NOT NULL,
     game_date TEXT NOT NULL,
     is_home INTEGER NOT NULL,
-    pts REAL, poss REAL, fta REAL, pf REAL,
+    pts REAL, poss REAL, fta REAL, pf REAL, minutes REAL,
     PRIMARY KEY (game_id, team)
 );
 
@@ -91,6 +91,32 @@ CREATE TABLE IF NOT EXISTS game_line (
     total REAL,
     home_win REAL,
     PRIMARY KEY (league, game_date, home, away, bookmaker)
+);
+
+-- RotoWire lineups: injury status and expected starters for upcoming games (warnings only).
+CREATE TABLE IF NOT EXISTS injury (
+    league TEXT NOT NULL,
+    game_date TEXT NOT NULL,
+    team TEXT NOT NULL,
+    player_name TEXT NOT NULL,
+    name_key TEXT NOT NULL,
+    status TEXT,
+    starter INTEGER NOT NULL DEFAULT 0,
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (league, game_date, team, name_key)
+);
+
+-- Main handicap of a game from the home side (negative = home favourite). Stoiximan wins over RotoWire.
+CREATE TABLE IF NOT EXISTS game_spread (
+    league TEXT NOT NULL,
+    game_date TEXT NOT NULL,
+    home TEXT NOT NULL,
+    away TEXT NOT NULL,
+    source TEXT NOT NULL,
+    fetched_at TEXT NOT NULL,
+    home_spread REAL NOT NULL,
+    total REAL,
+    PRIMARY KEY (league, game_date, home, away, source)
 );
 
 CREATE TABLE IF NOT EXISTS bet (

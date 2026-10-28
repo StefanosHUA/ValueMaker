@@ -20,14 +20,16 @@ public class MatchController {
     private final ValueEngine engine;
     private final OddsService odds;
     private final SettingsService settings;
+    private final WarningService warnings;
 
     public MatchController(DataRepository repo, ModelService models, ValueEngine engine, OddsService odds,
-                           SettingsService settings) {
+                           SettingsService settings, WarningService warnings) {
         this.repo = repo;
         this.models = models;
         this.engine = engine;
         this.odds = odds;
         this.settings = settings;
+        this.warnings = warnings;
     }
 
     @GetMapping("/matches")
@@ -73,6 +75,7 @@ public class MatchController {
                     : Math.abs(mg) <= 3.0
                     ? "Close matchup: starters should play heavy minutes and usage concentrates on the stars."
                     : "Moderate favourite: little blowout effect expected.");
+            model.addAttribute("gameWarnings", warnings.forGame(league, date, home, away));
             model.addAttribute("homePlayers", models.teamView(league, home, date));
             model.addAttribute("awayPlayers", models.teamView(league, away, date));
             if (calc || fetch) {

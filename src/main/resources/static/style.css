@@ -69,3 +69,5 @@ tr.outrow td { color: #9aa5b1; }
 .prob.lo b { color:#777; }
 .prob.lo .ubar div { background:#aab; }
 .gamectx { margin: 8px 0 14px; padding: 10px 14px; }
+.warns { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: #6b3a2a; }
+.warns .blowout { color: #c1121f; font-weight: 700; }

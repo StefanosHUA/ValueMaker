@@ -19,7 +19,14 @@ def connect(db_path: str) -> sqlite3.Connection:
     con = sqlite3.connect(db_path, timeout=60)
     con.execute("PRAGMA journal_mode=WAL")
     con.executescript(SCHEMA.read_text(encoding="utf-8"))
+    _ensure_column(con, "team_game", "minutes", "REAL")
     return con
+
+
+def _ensure_column(con: sqlite3.Connection, table: str, column: str, decl: str) -> None:
+    cols = {row[1] for row in con.execute(f"PRAGMA table_info({table})")}
+    if column not in cols:
+        con.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
 
 
 def name_key(name: str) -> str:

@@ -11,6 +11,7 @@
     <div class="card">
         <form method="post" class="row">
             <button type="submit" th:formaction="@{/admin/ingest/nba}">Update NBA (nba_api)</button>
+            <button type="submit" th:formaction="@{/admin/ingest/rotowire}">NBA injuries + handicap (RotoWire)</button>
             <button type="submit" th:formaction="@{/admin/ingest/euroleague}">Update Euroleague</button>
             <button type="submit" th:formaction="@{/admin/ingest/eurocup}">Update EuroCup</button>
             <button type="submit" class="danger" th:formaction="@{/admin/ingest-cancel}">Cancel running job</button>

@@ -35,6 +35,10 @@
     <div th:replace="~{fragments :: flash}"></div>
     <p class="error" th:if="${error}" th:text="${error}"></p>
 
+    <ul class="warns" th:if="${skipped != null and !skipped.isEmpty()}">
+        <li th:each="s : ${skipped}" th:text="${s}" class="blowout"></li>
+    </ul>
+
     <h2>Top 3 picks</h2>
     <p class="muted" th:if="${top != null and top.isEmpty()}">
         Nothing clears the value threshold right now. Fetch odds, check that data is fresh in
