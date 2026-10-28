@@ -143,6 +143,9 @@ public class OddsService {
             DataRepository.Player match = null;
             String league = null;
             for (var e : byLeague.entrySet()) {
+                if (l.group() != null && l.group().contains("|") && !l.group().startsWith(e.getKey() + "|")) {
+                    continue;
+                }
                 match = PlayerMatcher.match(e.getValue(), l.playerName());
                 if (match != null) {
                     league = e.getKey();
