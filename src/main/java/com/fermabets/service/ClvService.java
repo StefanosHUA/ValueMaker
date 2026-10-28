@@ -58,7 +58,11 @@ public class ClvService {
 
     /** Runs every 10 minutes: fresh odds for open bets, closing stamps, settlement and calibration. */
     @Scheduled(initialDelay = 120_000, fixedDelay = 600_000)
-    public void run() {
+    public synchronized void run() {
+        if (ingest.status().running()) {
+            log.info("CLV job skipped: an ingest is writing to the database");
+            return;
+        }
         try {
             LocalDate today = AppClock.today();
             Set<LocalDate> dates = new TreeSet<>();
@@ -121,6 +125,18 @@ public class ClvService {
     int logPicks(LocalDate date) {
         int n = 0;
         for (ValueEngine.ValueBet v : engine.top(engine.evaluate(date), 40)) {
+            try {
+                n += logPick(date, v);
+            } catch (RuntimeException e) {
+                log.warn("Skipping pick {}: {}", v.odds().playerName(), e.getMessage());
+            }
+        }
+        return n;
+    }
+
+    private int logPick(LocalDate date, ValueEngine.ValueBet v) {
+        int n = 0;
+        {
             String side = v.side();
             Object[] key = {date.toString(), v.odds().playerId(), v.odds().stat().name(), v.line(), side,
                     v.odds().bookmaker()};
