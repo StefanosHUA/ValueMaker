@@ -39,6 +39,10 @@
         <span th:if="${gm == null}" class="muted">&middot; no bookmaker spread yet (posted with the props) - using our own
             ratings: <span th:text="${home}"></span> <span th:text="${#numbers.formatDecimal(ownMargin, 1, 1)}"></span></span>
         <div th:text="${gameNote}"></div>
+        <ul class="warns" th:if="${gameWarnings != null and !gameWarnings.isEmpty()}">
+            <li th:each="w : ${gameWarnings}" th:text="${w}"
+                th:classappend="${#strings.contains(w, 'BLOWOUT')} ? 'blowout'"></li>
+        </ul>
     </div>
 
     <th:block th:if="${calc or message != null}">

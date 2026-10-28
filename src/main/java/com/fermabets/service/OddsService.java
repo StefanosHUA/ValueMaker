@@ -23,7 +23,11 @@ public class OddsService {
 
     /** Expected home margin and total points implied by a bookmaker. Groups tie it to the props roster sides. */
     public record GameLine(String bookmaker, String league, LocalDate date, String homeGroup, String awayGroup,
-                           double margin, Double total, Double homeWin) {
+                           double margin, Double total, Double homeWin, Double homeSpread) {
+        public GameLine(String bookmaker, String league, LocalDate date, String homeGroup, String awayGroup,
+                        double margin, Double total, Double homeWin) {
+            this(bookmaker, league, date, homeGroup, awayGroup, margin, total, homeWin, null);
+        }
     }
 
     public record OddsLine(String bookmaker, LocalDate date, String playerName, Stat stat, double line,
@@ -181,6 +185,10 @@ public class OddsService {
                 away = away.substring(prefix.length());
                 repo.saveGameMarket(g.league(), g.date(), home, away, g.bookmaker(), now, g.margin(), g.total(),
                         g.homeWin());
+                if (g.homeSpread() != null) {
+                    repo.saveSpread(g.league(), g.date(), home, away, g.bookmaker().toLowerCase(Locale.ROOT), now,
+                            g.homeSpread(), g.total());
+                }
             }
         }
         for (String name : missing) {

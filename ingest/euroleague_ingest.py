@@ -94,9 +94,11 @@ def save_game(con, league, season, game_id, game_date, g, df) -> None:
     for team, t in totals.items():
         poss = t["fga"] + 0.44 * t["fta"] - t["oreb"] + t["tov"]
         opp = g.awaycode if team == g.homecode else g.homecode
-        con.execute("INSERT OR REPLACE INTO team_game VALUES (?,?,?,?,?,?,?,?,?,?)",
-                    (game_id, league, team, opp, game_date, 1 if team == g.homecode else 0,
-                     t["pts"], poss, t["fta"], t["pf"]))
+        con.execute(
+            "INSERT OR REPLACE INTO team_game(game_id, league, team, opp, game_date, is_home, pts, poss, fta, pf)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?)",
+            (game_id, league, team, opp, game_date, 1 if team == g.homecode else 0,
+             t["pts"], poss, t["fta"], t["pf"]))
 
 
 def main() -> None:

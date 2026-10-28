@@ -100,8 +100,10 @@ def save_teams(con, df: pd.DataFrame) -> None:
         opp, is_home = parse_matchup(r.MATCHUP)
         poss = num(r.FGA) + 0.44 * num(r.FTA) - num(r.OREB) + num(r.TOV)
         rows.append((f"NBA:{r.GAME_ID}", LEAGUE, r.TEAM_ABBREVIATION, opp, r.GAME_DATE, is_home,
-                     num(r.PTS), poss, num(r.FTA), num(r.PF)))
-    con.executemany("INSERT OR REPLACE INTO team_game VALUES (?,?,?,?,?,?,?,?,?,?)", rows)
+                     num(r.PTS), poss, num(r.FTA), num(r.PF), parse_minutes(r.MIN)))
+    con.executemany(
+        "INSERT OR REPLACE INTO team_game(game_id, league, team, opp, game_date, is_home, pts, poss, fta, pf, minutes)"
+        " VALUES (?,?,?,?,?,?,?,?,?,?,?)", rows)
 
 
 def fetch_officials(raw_game_id: str) -> list[str]:

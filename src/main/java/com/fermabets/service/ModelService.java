@@ -16,7 +16,7 @@ public class ModelService {
     public record Prediction(String league, String playerId, String playerName, Stat stat, String team, String opp,
                              boolean home, LocalDate date, double mean, double projMinutes, int gamesUsed,
                              double[] features, CountDist dist, List<GameRow> history,
-                             List<String> notes) {
+                             List<String> notes) implements PickInfo {
         /** Projected possessions-used share while on the floor (20 = league average). */
         public double usage() {
             return features[11];

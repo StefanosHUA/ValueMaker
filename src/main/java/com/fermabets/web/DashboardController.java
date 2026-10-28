@@ -63,6 +63,7 @@ public class DashboardController {
                 });
             }
             model.addAttribute("moves", moves);
+            model.addAttribute("skipped", engine.skipped(day));
         } catch (RuntimeException e) {
             model.addAttribute("error", e.getMessage());
         }

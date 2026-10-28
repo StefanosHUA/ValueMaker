@@ -21,7 +21,7 @@
         <li th:each="p : ${problems}" th:text="${p}"></li>
     </ul>
 </div>
-        <div class="card top" th:fragment="pickCard(v, rank, date, moves)" th:classappend="${v.suspicious} ? 'warn'">
+        <div class="card top" th:fragment="pickCard(v, rank, date, moves)" th:classappend="${v.suspicious or (v.warnings != null and !v.warnings.isEmpty())} ? 'warn'">
             <div class="rank" th:text="'#' + ${rank}"></div>
             <div class="big" th:text="${v.odds.playerName}"></div>
             <div class="pick">
@@ -32,7 +32,7 @@
                 <small class="muted" th:if="${moves.containsKey(v.odds.id)}" th:text="'(moved ' + ${moves.get(v.odds.id)} + ')'"></small>
             </div>
             <div class="muted" th:text="${v.prediction.team} + (${v.prediction.home} ? ' vs ' : ' @ ') + ${v.prediction.opp}"></div>
-            <div class="usage" th:title="'Share of team possessions this player uses while on the floor. 20% is average, stars 28%+.'">Usage <b th:text="${#numbers.formatDecimal(v.prediction.usage, 1, 1)} + '%'"></b> <span class="muted" th:text="'(older form ' + ${#numbers.formatDecimal(v.prediction.formUsage, 1, 1)} + '%)'"></span> &middot; <b th:text="'~' + ${#numbers.formatDecimal(v.prediction.roleMinutes, 1, 0)} + ' min'"></b></div>
+            <div class="usage" th:title="'Share of team possessions this player uses while on the floor. 20% is average, stars 28%+.'">Usage <b th:text="${#numbers.formatDecimal(v.prediction.usage, 1, 1)} + '%'"></b> <span class="muted" th:if="${!v.fermabets}" th:text="'(older form ' + ${#numbers.formatDecimal(v.prediction.formUsage, 1, 1)} + '%)'"></span> &middot; <b th:text="'~' + ${#numbers.formatDecimal(v.prediction.roleMinutes, 1, 0)} + ' min'"></b></div>
             <div class="meter" th:title="'Model ' + ${#numbers.formatDecimal(v.pModel * 100, 1, 0)} + '% / market ' + ${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'">
                 <div class="mkt" th:style="'width:' + ${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'"></div>
                 <div class="fin" th:style="'width:' + ${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></div>
@@ -41,6 +41,10 @@
                 &rarr; our probability <b th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b>
                 &middot; EV <b class="pos" th:text="'+' + ${#numbers.formatDecimal(v.ev * 100, 1, 0)} + '%'"></b></div>
             <span class="tag sus" th:if="${v.suspicious}">model and market disagree a lot - check injury/news</span>
+            <ul class="warns" th:if="${v.warnings != null and !v.warnings.isEmpty()}">
+                <li th:each="w : ${v.warnings}" th:text="${w}"
+                    th:classappend="${#strings.contains(w, 'BLOWOUT') or #strings.contains(w, 'λίγοι φετινοί')} ? 'blowout'"></li>
+            </ul>
             <details>
                 <summary>Why?</summary>
                 <p class="muted" th:text="${v.explanation}"></p>
@@ -56,7 +60,7 @@
                 <input type="hidden" name="line" th:value="${v.line}">
                 <input type="hidden" name="odds" th:value="${v.bookOdds}">
                 <input type="hidden" name="prob" th:value="${v.pFinal}">
-                <label>Stake EUR <input type="number" step="1" min="1" name="stake" th:value="${#numbers.formatDecimal(v.stake, 1, 0)}" style="width:70px"></label>
+                <label>Stake EUR <input type="number" th:step="${v.fermabets} ? '0.01' : '1'" min="0" name="stake" th:value="${v.fermabets} ? ${#numbers.formatDecimal(v.stake, 1, 2)} : ${#numbers.formatDecimal(v.stake, 1, 0)}" style="width:70px"></label>
                 <button type="submit">I placed this bet</button>
             </form>
         </div>

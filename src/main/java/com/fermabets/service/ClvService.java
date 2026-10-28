@@ -56,7 +56,7 @@ public class ClvService {
         engine.setCalibration(stats().shift());
     }
 
-    /** Runs every 10 minutes: fresh odds for open bets, closing stamps, settlement and calibration. */
+    /** Settlement and calibration only. Odds are fetched when you press Fetch, not on a timer. */
     @Scheduled(initialDelay = 120_000, fixedDelay = 600_000)
     public synchronized void run() {
         if (ingest.status().running()) {
@@ -64,21 +64,7 @@ public class ClvService {
             return;
         }
         try {
-            LocalDate today = AppClock.today();
-            Set<LocalDate> dates = new TreeSet<>();
-            for (Map<String, Object> b : pending()) {
-                LocalDate d = LocalDate.parse((String) b.get("game_date"));
-                if (!d.isAfter(today)) {
-                    dates.add(d);
-                }
-            }
-            for (LocalDate d : dates) {
-                if (!d.isBefore(today.minusDays(1))) {
-                    odds.refreshFromProviders(d);
-                }
-            }
             LocalDate d0 = AppClock.today();
-            odds.refreshFromProviders(d0);
             int closed = logPicks(d0) + captureClosing();
             int settled = bets.settlePending() + settlePicks();
             engine.setCalibration(stats().shift());

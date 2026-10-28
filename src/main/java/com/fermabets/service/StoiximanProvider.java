@@ -90,7 +90,7 @@ public class StoiximanProvider implements OddsService.OddsProvider {
                     Thread.sleep(600);
                     String json = get(BASE + "/api/betbuilderplus/event?id=" + e.getKey() + "&sportCode=BASK");
                     JsonNode root = mapper.readTree(json);
-                    parseEvent(root, date, league.code() + "|" + e.getKey()).forEach(out::add);
+                    out.addAll(parseEvent(root, date, String.valueOf(e.getKey())));
                     parseGame(root, date, String.valueOf(e.getKey()), league.code(), eventNames.get(e.getKey()),
                             league.marginSd(), league.totalSd()).ifPresent(gl::add);
                 } catch (Exception ex) {
@@ -160,7 +160,7 @@ public class StoiximanProvider implements OddsService.OddsProvider {
         JsonNode selections = data.path("selections");
         String homeName = eventName == null || !eventName.contains(" - ") ? null
                 : norm(eventName.substring(0, eventName.indexOf(" - ")));
-        Double margin = null, total = null, homeWin = null;
+        Double margin = null, total = null, homeWin = null, homeSpread = null;
         double bestGap = Double.MAX_VALUE, bestTotalGap = Double.MAX_VALUE;
         for (JsonNode m : data.path("markets")) {
             int type = m.path("typeId").asInt();
@@ -207,6 +207,7 @@ public class StoiximanProvider implements OddsService.OddsProvider {
                 if (gap < bestGap) {
                     bestGap = gap;
                     margin = -home.get("handicap").asDouble() + marginSd * Normal.inv(qHome);
+                    homeSpread = home.get("handicap").asDouble();
                 }
             }
         }
@@ -216,8 +217,8 @@ public class StoiximanProvider implements OddsService.OddsProvider {
         if (margin == null) {
             return Optional.empty();
         }
-        return Optional.of(new OddsService.GameLine("Stoiximan", league, date, league + "|" + eventId + "homeRoster",
-                league + "|" + eventId + "awayRoster", margin, total, homeWin));
+        return Optional.of(new OddsService.GameLine("Stoiximan", league, date, eventId + "homeRoster",
+                eventId + "awayRoster", margin, total, homeWin, homeSpread));
     }
 
     /** Parses one bet-builder payload into prop lines. Over/under markets win over milestone (N+) ladders. */

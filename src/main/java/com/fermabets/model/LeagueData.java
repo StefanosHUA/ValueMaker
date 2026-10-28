@@ -425,6 +425,57 @@ public final class LeagueData {
         return out;
     }
 
+    /** Possessions per 48 minutes for one played game (both teams averaged); NaN when unknown. */
+    public double pace(String gameId, String team) {
+        TeamGame g = tgByKey.get(gameId + "|" + team);
+        if (g == null) {
+            return Double.NaN;
+        }
+        TeamGame o = tgByKey.get(gameId + "|" + g.opp());
+        Double tm = teamMinutes.get(gameId + "|" + team);
+        double minutes = tm == null || tm < 200 ? 240.0 : tm;
+        double poss = o == null ? g.poss() : (g.poss() + o.poss()) / 2.0;
+        return poss * 48.0 / (minutes / 5.0);
+    }
+
+    /** Mean pace of the team's games from the given date up to (not including) the cutoff; NaN without games. */
+    public double seasonPace(String team, LocalDate from, LocalDate before) {
+        double s = 0;
+        int n = 0;
+        for (TeamGame g : teamGames.getOrDefault(team, List.of())) {
+            if (!g.date().isBefore(from) && g.date().isBefore(before)) {
+                double p = pace(g.gameId(), team);
+                if (!Double.isNaN(p)) {
+                    s += p;
+                    n++;
+                }
+            }
+        }
+        return n == 0 ? Double.NaN : s / n;
+    }
+
+    /** First game date of the league's latest season before the cutoff (an offseason is a 60+ day gap). */
+    public LocalDate currentSeasonStart(LocalDate before) {
+        TreeSet<LocalDate> dates = new TreeSet<>();
+        teamGames.values().forEach(l -> l.forEach(g -> {
+            if (g.date().isBefore(before)) {
+                dates.add(g.date());
+            }
+        }));
+        LocalDate start = dates.isEmpty() ? before : dates.first();
+        LocalDate prev = null;
+        for (LocalDate d : dates) {
+            if (prev != null && ChronoUnit.DAYS.between(prev, d) >= 60) {
+                start = d;
+            }
+            prev = d;
+        }
+        if (!dates.isEmpty() && ChronoUnit.DAYS.between(dates.last(), before) >= 60) {
+            return before;
+        }
+        return start;
+    }
+
     /** Possessions-used share while on the floor: 20 is average, stars are 28+. */
     public double usage(GameRow r) {
         String key = r.gameId() + "|" + r.team();

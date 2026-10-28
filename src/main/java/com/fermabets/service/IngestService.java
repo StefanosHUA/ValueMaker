@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class IngestService {
     public enum Source {
         NBA("NBA", "nba_ingest.py", List.of()),
+        ROTOWIRE("RotoWire", "rotowire_ingest.py", List.of()),
         EUROLEAGUE("EL", "euroleague_ingest.py", List.of("--competition", "E")),
         EUROCUP("EC", "euroleague_ingest.py", List.of("--competition", "U"));
 

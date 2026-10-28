@@ -89,6 +89,52 @@ public class DataRepository {
                 fetchedAt, margin, total, homeWin);
     }
 
+    public void saveSpread(String league, LocalDate date, String home, String away, String source, String fetchedAt,
+                           double homeSpread, Double total) {
+        jdbc.update("INSERT OR REPLACE INTO game_spread(league, game_date, home, away, source, fetched_at, home_spread,"
+                + " total) VALUES (?,?,?,?,?,?,?,?)", league, date.toString(), home, away, source, fetchedAt,
+                homeSpread, total);
+    }
+
+    public record Spread(String home, String away, double homeSpread, String source) {
+        /** Handicap from this team's side: negative means favourite. */
+        public double forTeam(String team) {
+            return team.equals(home) ? homeSpread : -homeSpread;
+        }
+    }
+
+    /** Main handicap of the game; the bookmaker (Stoiximan) wins over RotoWire. */
+    public Optional<Spread> spread(String league, LocalDate date, String home, String away) {
+        return jdbc.query("SELECT home, away, home_spread, source FROM game_spread WHERE league=? AND game_date=?"
+                                + " AND home=? AND away=? ORDER BY CASE source WHEN 'stoiximan' THEN 0 ELSE 1 END,"
+                                + " fetched_at DESC",
+                        (rs, i) -> new Spread(rs.getString(1), rs.getString(2), rs.getDouble(3), rs.getString(4)),
+                        league, date.toString(), home, away)
+                .stream().findFirst();
+    }
+
+    public record Injury(String team, String name, String key, String status, boolean starter) {
+    }
+
+    public List<Injury> injuries(String league, LocalDate date, String team) {
+        return jdbc.query("SELECT team, player_name, name_key, status, starter FROM injury WHERE league=?"
+                        + " AND game_date=? AND team=? ORDER BY starter DESC, player_name",
+                (rs, i) -> new Injury(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4),
+                        rs.getInt(5) == 1),
+                league, date.toString(), team);
+    }
+
+    public boolean hasInjuryData(String league, LocalDate date) {
+        Integer n = jdbc.queryForObject("SELECT COUNT(*) FROM injury WHERE league=? AND game_date=?", Integer.class,
+                league, date.toString());
+        return n != null && n > 0;
+    }
+
+    public Optional<String> playerKey(String playerId) {
+        return jdbc.queryForList("SELECT name_key FROM player WHERE id=?", String.class, playerId).stream()
+                .findFirst();
+    }
+
     public Optional<Fixture> fixtureFor(String league, LocalDate date, String team) {
         return jdbc.query("SELECT league, game_date, home, away FROM schedule WHERE league=? AND game_date=?"
                                 + " AND (home=? OR away=?)",
