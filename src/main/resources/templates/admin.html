@@ -13,8 +13,9 @@
             <button type="submit" th:formaction="@{/admin/ingest/nba}">Update NBA (nba_api)</button>
             <button type="submit" th:formaction="@{/admin/ingest/euroleague}">Update Euroleague</button>
             <button type="submit" th:formaction="@{/admin/ingest/eurocup}">Update EuroCup</button>
+            <button type="submit" class="danger" th:formaction="@{/admin/ingest-cancel}">Cancel running job</button>
         </form>
-        <p class="muted">Incremental: NBA refreshes player/team logs, the next days' schedule and up to 1500 missing referee crews
+        <p class="muted">Incremental: NBA refreshes player/team logs, the next days' schedule and up to 200 missing referee crews
             per run; Euroleague only fetches games not yet stored (the first run takes a while).</p>
         <pre class="log" id="log">Loading...</pre>
         <span id="state" class="tag"></span>

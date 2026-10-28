@@ -51,6 +51,19 @@ public class IngestService {
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final LinkedList<String> log = new LinkedList<>();
     private volatile String current = "";
+    private volatile Process proc;
+
+    /** Kills the running ingest process (and its children). Data already committed stays. */
+    public boolean cancel() {
+        Process p = proc;
+        if (p == null || !p.isAlive()) {
+            return false;
+        }
+        p.descendants().forEach(ProcessHandle::destroyForcibly);
+        p.destroyForcibly();
+        append("Cancelled by user");
+        return true;
+    }
 
     public IngestService(AppProperties props, DataRepository repo, ModelService models) {
         this.props = props;
@@ -98,6 +111,7 @@ public class IngestService {
             pb.environment().put("PYTHONUNBUFFERED", "1");
             pb.environment().put("PYTHONIOENCODING", "utf-8");
             Process proc = pb.start();
+            this.proc = proc;
             try (BufferedReader r = new BufferedReader(
                     new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;

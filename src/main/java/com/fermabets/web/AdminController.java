@@ -40,6 +40,12 @@ public class AdminController {
         return "redirect:/admin";
     }
 
+    @PostMapping("/ingest-cancel")
+    public String cancel(RedirectAttributes ra) {
+        ra.addFlashAttribute("message", ingest.cancel() ? "Ingest cancelled." : "Nothing is running.");
+        return "redirect:/admin";
+    }
+
     @GetMapping(value = "/status", produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseBody
     public IngestService.Status status() {
