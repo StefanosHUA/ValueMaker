@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:fragment="head(title)">
+    <meta charset="UTF-8">
+    <title th:text="${title} + ' - Fermabets'">Fermabets</title>
+    <link rel="stylesheet" th:href="@{/style.css}">
+</head>
+<body>
+<nav th:fragment="nav(page)">
+    <span class="brand">Fermabets</span>
+    <a th:href="@{/}" th:classappend="${page == 'dashboard'} ? 'active'">Value bets</a>
+    <a th:href="@{/matches}" th:classappend="${page == 'matches'} ? 'active'">Matches</a>
+    <a th:href="@{/odds}" th:classappend="${page == 'odds'} ? 'active'">Odds &amp; context</a>
+    <a th:href="@{/bets}" th:classappend="${page == 'bets'} ? 'active'">Bet tracker</a>
+    <a th:href="@{/model}" th:classappend="${page == 'model'} ? 'active'">Model</a>
+    <a th:href="@{/admin}" th:classappend="${page == 'admin'} ? 'active'">Admin</a>
+</nav>
+<div th:fragment="flash">
+    <p class="msg" th:if="${message}" th:text="${message}"></p>
+    <ul class="problems" th:if="${problems != null and !problems.isEmpty()}">
+        <li th:each="p : ${problems}" th:text="${p}"></li>
+    </ul>
+</div>
+        <div class="card top" th:fragment="pickCard(v, rank, date, moves)" th:classappend="${v.suspicious} ? 'warn'">
+            <div class="rank" th:text="'#' + ${rank}"></div>
+            <div class="big" th:text="${v.odds.playerName}"></div>
+            <div class="pick">
+                <span class="tag" th:text="${v.odds.stat.label}"></span>
+                <b th:text="${v.side} + ' ' + ${v.line}"></b>
+                @ <b class="odds" th:text="${#numbers.formatDecimal(v.bookOdds, 1, 2)}"></b>
+                at <b class="book" th:text="${v.odds.bookmaker}"></b>
+                <small class="muted" th:if="${moves.containsKey(v.odds.id)}" th:text="'(moved ' + ${moves.get(v.odds.id)} + ')'"></small>
+            </div>
+            <div class="muted" th:text="${v.prediction.team} + (${v.prediction.home} ? ' vs ' : ' @ ') + ${v.prediction.opp}"></div>
+            <div class="usage" th:title="'Share of team possessions this player uses while on the floor. 20% is average, stars 28%+.'">Usage <b th:text="${#numbers.formatDecimal(v.prediction.usage, 1, 1)} + '%'"></b> <span class="muted" th:text="'(older form ' + ${#numbers.formatDecimal(v.prediction.formUsage, 1, 1)} + '%)'"></span> &middot; <b th:text="'~' + ${#numbers.formatDecimal(v.prediction.roleMinutes, 1, 0)} + ' min'"></b></div>
+            <div class="meter" th:title="'Model ' + ${#numbers.formatDecimal(v.pModel * 100, 1, 0)} + '% / market ' + ${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'">
+                <div class="mkt" th:style="'width:' + ${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'"></div>
+                <div class="fin" th:style="'width:' + ${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></div>
+            </div>
+            <div class="muted small">win chance: market <b th:text="${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'"></b>
+                &rarr; our probability <b th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b>
+                &middot; EV <b class="pos" th:text="'+' + ${#numbers.formatDecimal(v.ev * 100, 1, 0)} + '%'"></b></div>
+            <span class="tag sus" th:if="${v.suspicious}">model and market disagree a lot - check injury/news</span>
+            <details>
+                <summary>Why?</summary>
+                <p class="muted" th:text="${v.explanation}"></p>
+            </details>
+            <form method="post" th:action="@{/bets/place}" class="row">
+                <input type="hidden" name="date" th:value="${date}">
+                <input type="hidden" name="league" th:value="${v.odds.league}">
+                <input type="hidden" name="bookmaker" th:value="${v.odds.bookmaker}">
+                <input type="hidden" name="player" th:value="${v.odds.playerName}">
+                <input type="hidden" name="playerId" th:value="${v.odds.playerId}">
+                <input type="hidden" name="stat" th:value="${v.odds.stat}">
+                <input type="hidden" name="side" th:value="${v.side}">
+                <input type="hidden" name="line" th:value="${v.line}">
+                <input type="hidden" name="odds" th:value="${v.bookOdds}">
+                <input type="hidden" name="prob" th:value="${v.pFinal}">
+                <label>Stake EUR <input type="number" step="1" min="1" name="stake" th:value="${#numbers.formatDecimal(v.stake, 1, 0)}" style="width:70px"></label>
+                <button type="submit">I placed this bet</button>
+            </form>
+        </div>
+</body>
+</html>

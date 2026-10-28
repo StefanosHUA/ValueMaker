@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Match')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav(${page})}"></nav>
+<main>
+    <p><a th:href="@{/matches(date=${date})}">&larr; all matches</a></p>
+    <div class="toolbar">
+        <h1><span th:text="${away}"></span> <span class="muted">@</span> <span th:text="${home}"></span>
+            <span class="tag" th:text="${league}"></span></h1>
+        <div class="row">
+            <form method="get" th:action="@{/match}" class="inline">
+                <input type="hidden" name="date" th:value="${date}"><input type="hidden" name="league" th:value="${league}">
+                <input type="hidden" name="home" th:value="${home}"><input type="hidden" name="away" th:value="${away}">
+                <input type="hidden" name="calc" value="true">
+                <button type="submit">Calculate value bets</button>
+            </form>
+            <form method="get" th:action="@{/match}" class="inline">
+                <input type="hidden" name="date" th:value="${date}"><input type="hidden" name="league" th:value="${league}">
+                <input type="hidden" name="home" th:value="${home}"><input type="hidden" name="away" th:value="${away}">
+                <input type="hidden" name="fetch" value="true">
+                <button type="submit">Fetch fresh odds + calculate</button>
+            </form>
+        </div>
+    </div>
+    <p class="msg" th:if="${message}" th:text="${message}"></p>
+    <p class="error" th:if="${error}" th:text="${error}"></p>
+
+    <div class="card gamectx" th:if="${gameNote != null}">
+        <b>Game context</b>
+        <span th:if="${gm != null}">
+            &middot; <span th:text="${gm.margin >= 0 ? home : away}"></span>
+            <b th:text="${#numbers.formatDecimal(gm.margin >= 0 ? -gm.margin : gm.margin, 1, 1)}"></b> spread
+            <span th:if="${gm.total != null}">&middot; total <b th:text="${#numbers.formatDecimal(gm.total, 1, 1)}"></b></span>
+            <span th:if="${gm.homeWin != null}">&middot; <span th:text="${home}"></span> win
+                <b th:text="${#numbers.formatDecimal(gm.homeWin * 100, 1, 0)} + '%'"></b></span>
+            <span class="muted" th:text="'(from ' + ${gm.bookmaker} + ')'"></span>
+        </span>
+        <span th:if="${gm == null}" class="muted">&middot; no bookmaker spread yet (posted with the props) - using our own
+            ratings: <span th:text="${home}"></span> <span th:text="${#numbers.formatDecimal(ownMargin, 1, 1)}"></span></span>
+        <div th:text="${gameNote}"></div>
+    </div>
+
+    <th:block th:if="${calc or message != null}">
+        <h2>Value bets for this game</h2>
+        <p class="muted" th:if="${top == null or top.isEmpty()}">No bet clears the value threshold for this game
+            (or no odds are loaded for it yet - bookmakers post props a few hours before tip-off).</p>
+        <div class="cards">
+            <th:block th:each="v, it : ${top}"><div th:replace="~{fragments :: pickCard(${v}, ${it.count}, ${date}, ${moves})}"></div></th:block>
+        </div>
+        <details th:if="${all != null and !all.isEmpty()}">
+            <summary>All analysed props for this game (<span th:text="${all.size()}"></span>)</summary>
+            <table>
+                <tr><th>Player</th><th>Pick</th><th>Odds</th><th>Book</th><th>Projection</th><th>Usage</th><th>Market</th><th>Probability</th><th>Fair odds</th><th>EV</th></tr>
+                <tr th:each="v : ${all}">
+                    <td th:text="${v.odds.playerName}"></td>
+                    <td th:text="${v.side} + ' ' + ${v.line} + ' ' + ${v.odds.stat.label}"></td>
+                    <td th:text="${#numbers.formatDecimal(v.bookOdds, 1, 2)}"></td>
+                    <td th:text="${v.odds.bookmaker}"></td>
+                    <td th:text="${#numbers.formatDecimal(v.prediction.mean, 1, 1)}"></td>
+                    <td th:text="${#numbers.formatDecimal(v.prediction.usage, 1, 0)} + '%'"></td>
+                    <td th:text="${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'"></td>
+                    <td class="prob" th:classappend="${v.pFinal >= 0.6} ? 'hi' : (${v.pFinal >= 0.45} ? 'mid' : 'lo')" th:title="'Model probability this pick wins. Break-even at these odds: ' + ${#numbers.formatDecimal(100 / v.bookOdds, 1, 0)} + '%'"><b th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b><div class="ubar"><div th:style="'width:' + ${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></div></div></td>
+<td th:text="${#numbers.formatDecimal(1 / v.pFinal, 1, 2)}" title="Odds at which this pick would break even by our model"></td>
+                    <td th:classappend="${v.ev > 0} ? 'pos' : 'neg'" th:text="${#numbers.formatDecimal(v.ev * 100, 1, 1)} + '%'"></td>
+                </tr>
+            </table>
+        </details>
+    </th:block>
+
+    <h2>Projected roles and usage</h2>
+    <p class="muted">Usage = share of the team's possessions a player uses while on the floor (20% is average, stars 28%+).
+        It is projected from games with the <b>current supporting cast</b> (games with a former team or old roster count less),
+        then re-balanced so the team's usage adds up, and shifted when rotation players are out. "Older form" is the plain
+        recent average, shown so you can see role changes.</p>
+    <div class="twocol">
+        <div th:each="side : ${ {home, away} }">
+            <h3 th:text="${side}"></h3>
+            <table th:with="players=${side == home ? homePlayers : awayPlayers}">
+                <tr><th>Player</th><th>Min</th><th colspan="2">Usage</th><th>Older form</th><th>PTS</th><th>REB</th><th>AST</th><th>3PM</th></tr>
+                <tr th:each="p : ${players}" th:classappend="${p.out} ? 'outrow'">
+                    <td><span th:text="${p.name}"></span>
+                        <span class="tag sus" th:if="${p.out and !p.assumedOut}">out</span>
+                        <span class="tag sus" th:if="${p.assumedOut}" title="Missed the last 3 team games, assumed to be out. Add him on the Odds page if he is playing.">assumed out</span>
+                        <span class="tag" th:if="${!p.out and p.continuity < 0.5}" title="Mostly played with a different supporting cast">new role</span>
+                    </td>
+                    <td th:text="${p.out} ? '-' : ${#numbers.formatDecimal(p.minutes, 1, 0)}"></td>
+                    <td th:text="${#numbers.formatDecimal(p.usage, 1, 1)} + '%'"></td>
+                    <td><div class="ubar"><div th:style="'width:' + ${#numbers.formatDecimal(p.usage * 2.5, 1, 0)} + '%'"></div></div></td>
+                    <td class="muted" th:text="${#numbers.formatDecimal(p.formUsage, 1, 1)} + '%'"></td>
+                    <td th:text="${p.projection.get(T(com.fermabets.domain.Stat).PTS) != null} ? ${#numbers.formatDecimal(p.projection.get(T(com.fermabets.domain.Stat).PTS), 1, 1)} : '-'"></td>
+                    <td th:text="${p.projection.get(T(com.fermabets.domain.Stat).REB) != null} ? ${#numbers.formatDecimal(p.projection.get(T(com.fermabets.domain.Stat).REB), 1, 1)} : '-'"></td>
+                    <td th:text="${p.projection.get(T(com.fermabets.domain.Stat).AST) != null} ? ${#numbers.formatDecimal(p.projection.get(T(com.fermabets.domain.Stat).AST), 1, 1)} : '-'"></td>
+                    <td th:text="${p.projection.get(T(com.fermabets.domain.Stat).FG3M) != null} ? ${#numbers.formatDecimal(p.projection.get(T(com.fermabets.domain.Stat).FG3M), 1, 1)} : '-'"></td>
+                </tr>
+            </table>
+        </div>
+    </div>
+</main>
+</body>
+</html>

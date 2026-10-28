@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Bet tracker')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav(${page})}"></nav>
+<main>
+    <h1>Bet tracker</h1>
+    <div th:replace="~{fragments :: flash}"></div>
+    <div class="cards">
+        <div class="card"><div class="muted">Profit (settled)</div>
+            <div class="big" th:classappend="${summary.profit >= 0} ? 'pos' : 'neg'" th:text="${#numbers.formatDecimal(summary.profit, 1, 2)} + ' EUR'"></div>
+            <div class="muted" th:text="'ROI ' + ${#numbers.formatDecimal(summary.roi * 100, 1, 1)} + '% on ' + ${#numbers.formatDecimal(summary.staked, 1, 0)} + ' EUR staked'"></div></div>
+        <div class="card"><div class="muted">This month vs target</div>
+            <div class="big" th:text="${#numbers.formatDecimal(summary.monthProfit, 1, 2)} + ' / ' + ${#numbers.formatDecimal(summary.monthTarget, 1, 0)} + ' EUR'"></div></div>
+        <div class="card"><div class="muted">Record</div>
+            <div class="big" th:text="${summary.wins} + ' / ' + ${summary.settled} + ' won'"></div>
+            <div class="muted" th:text="${summary.pending} + ' pending'"></div></div>
+        <div class="card"><div class="muted">Closing-line value (CLV)</div>
+            <div class="big" th:classappend="${clv.avgClv >= 0} ? 'pos' : 'neg'" th:text="${clv.clvCount == 0} ? 'no data yet' : ${#numbers.formatDecimal(clv.avgClv * 100, 1, 1)} + '%'"></div>
+            <div class="muted" th:text="'beat the close on ' + ${#numbers.formatDecimal(clv.beatClose * 100, 1, 0)} + '% of ' + ${clv.clvCount} + ' bets'"></div></div>
+        <div class="card"><div class="muted">Model accuracy (all logged picks)</div>
+            <div class="big" th:text="${#numbers.formatDecimal(clv.hitRate * 100, 1, 0)} + '% hit vs ' + ${#numbers.formatDecimal(clv.avgProb * 100, 1, 0)} + '% predicted'"></div>
+            <div class="muted" th:text="'Brier ' + ${#numbers.formatDecimal(clv.brier, 1, 3)} + ' on ' + ${clv.settled} + ' bets; learned calibration ' + ${#numbers.formatDecimal(clv.shift * 100, 1, 1)} + ' pts (starts at 40 bets)'"></div></div>
+    </div>
+    <form method="post" th:action="@{/bets/settle}"><button type="submit">Settle pending bets from stored box scores</button></form>
+    <form method="post" th:action="@{/bets/clv}" class="inline"><button type="submit">Update closing lines now</button></form>
+    <p class="muted">A background job does this every 10 minutes. Update the data in Admin first so the finished games are available.</p>
+    <table>
+        <tr><th>Date</th><th>Player</th><th>Bet</th><th>Odds</th><th>Stake</th><th>Model prob</th><th>CLV</th><th>Result</th><th>Actual</th><th>P/L</th><th></th></tr>
+        <tr th:each="b : ${bets}">
+            <td th:text="${b.date}"></td><td th:text="${b.player}"></td>
+            <td th:text="${b.side} + ' ' + ${b.line} + ' ' + ${b.stat}"></td>
+            <td th:text="${b.odds}"></td><td th:text="${b.stake}"></td>
+            <td th:text="${b.modelProb != null} ? ${#numbers.formatDecimal(b.modelProb * 100, 1, 0)} + '%' : ''"></td>
+            <td th:text="${b.clv != null} ? ${#numbers.formatDecimal(b.clv * 100, 1, 1)} + '%'  : '-'" th:classappend="${b.clv != null and b.clv > 0} ? 'pos' : (${b.clv != null and b.clv < 0} ? 'neg' : '')"></td>
+            <td th:text="${b.result}"></td><td th:text="${b.actual}"></td>
+            <td th:text="${b.profit}" th:classappend="${b.profit != null and b.profit > 0} ? 'pos' : (${b.profit != null and b.profit < 0} ? 'neg' : '')"></td>
+            <td><form method="post" th:action="@{/bets/{id}/delete(id=${b.id})}"><button class="danger" type="submit">x</button></form></td>
+        </tr>
+    </table>
+</main>
+</body>
+</html>

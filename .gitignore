@@ -6,3 +6,10 @@ __pycache__/
 .venv/
 venv/
 ~$*
+target/
+data/
+ingest/.venv/
+
+.idea/
+*.log
+*.err

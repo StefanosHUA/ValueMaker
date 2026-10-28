@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Odds')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav(${page})}"></nav>
+<main>
+    <h1>Odds &amp; game context</h1>
+    <form method="get" class="row">
+        <label>Date <input type="date" name="date" th:value="${date}"></label>
+        <button type="submit">Load</button>
+    </form>
+    <div th:replace="~{fragments :: flash}"></div>
+
+    <h2>Import odds</h2>
+    <div class="card">
+        <form method="post" th:action="@{/odds/refresh}" class="row">
+            <input type="hidden" name="date" th:value="${date}">
+            <button type="submit">Fetch from bookmakers</button>
+            <span class="muted" th:text="${providers} + ' automatic adapter(s) registered'"></span>
+        </form>
+        <form method="post" th:action="@{/odds/import}">
+            <p class="muted">One line per prop: <code>date,bookmaker,player,stat,line,over odds,under odds</code>
+                (date/bookmaker may be left empty; under odds optional). Stats: pts, reb, ast, 3pm, stl, blk, tov, pra, pr, pa, ra.</p>
+            <textarea name="text" rows="6" placeholder=",Stoiximan,Luka Doncic,pts,28.5,1.85,1.95"></textarea>
+            <div class="row">
+                <label>Default date <input type="date" name="date" th:value="${date}"></label>
+                <label>Default bookmaker <input name="bookmaker" value="Manual"></label>
+                <button type="submit">Import</button>
+            </div>
+        </form>
+    </div>
+
+    <h2>Stored odds</h2>
+    <table th:if="${!rows.isEmpty()}">
+        <tr><th>Player</th><th>Stat</th><th>Line</th><th>Over</th><th>Under</th><th>Book</th></tr>
+        <tr th:each="r : ${rows}">
+            <td th:text="${r.playerName}"></td><td th:text="${r.stat}"></td><td th:text="${r.line}"></td>
+            <td th:text="${r.over}"></td><td th:text="${r.under}"></td><td th:text="${r.bookmaker}"></td>
+        </tr>
+    </table>
+    <form method="post" th:action="@{/odds/clear}" th:if="${!rows.isEmpty()}">
+        <input type="hidden" name="date" th:value="${date}"><button class="danger" type="submit">Clear odds for this date</button>
+    </form>
+
+    <h2>Absences (players who will not play)</h2>
+    <p class="muted">Missing rotation players raise teammates' usage in the model. Add confirmed-out players before checking value bets.</p>
+    <form method="post" th:action="@{/odds/absence}" class="row">
+        <input type="hidden" name="date" th:value="${date}">
+        <input name="player" placeholder="Player name" required>
+        <input name="note" placeholder="note (injury, rest...)">
+        <button type="submit">Add</button>
+    </form>
+    <ul><li th:each="a : ${absences}" th:text="${a.name} + ' - ' + ${a.note}"></li></ul>
+    <form method="post" th:action="@{/odds/absence/clear}" th:if="${!absences.isEmpty()}">
+        <input type="hidden" name="date" th:value="${date}"><button class="danger" type="submit">Clear absences</button>
+    </form>
+
+    <h2>Referee crew (optional)</h2>
+    <p class="muted">NBA assigns crews on game day. Enter the crew to include the officiating (whistle) factor learned from history.</p>
+    <form method="post" th:action="@{/odds/crew}" class="row">
+        <input type="hidden" name="date" th:value="${date}">
+        <select name="league"><option>NBA</option><option>EL</option><option>EC</option></select>
+        <select name="home"><option th:each="f : ${fixtures}" th:value="${f.home}" th:text="${f.home} + ' (home)'"></option></select>
+        <input name="officials" placeholder="Scott Foster, Tony Brothers, Josh Tiven" size="45">
+        <button type="submit">Save crew</button>
+    </form>
+
+    <h2>Fixtures</h2>
+    <table th:if="${!fixtures.isEmpty()}">
+        <tr><th>League</th><th>Home</th><th>Away</th></tr>
+        <tr th:each="f : ${fixtures}"><td th:text="${f.league}"></td><td th:text="${f.home}"></td><td th:text="${f.away}"></td></tr>
+    </table>
+</main>
+</body>
+</html>

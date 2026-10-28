@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Matches')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav(${page})}"></nav>
+<main>
+    <div class="toolbar">
+        <h1>Matches</h1>
+        <div class="daytabs">
+            <a th:href="@{/matches(date=${yesterday})}" th:classappend="${date == yesterday} ? 'on'">Yesterday</a>
+            <a th:href="@{/matches(date=${today})}" th:classappend="${date == today} ? 'on'">Today</a>
+            <a th:href="@{/matches(date=${tomorrow})}" th:classappend="${date == tomorrow} ? 'on'">Tomorrow</a>
+            <form method="get" class="inline"><input type="date" name="date" th:value="${date}" onchange="this.form.submit()"></form>
+        </div>
+    </div>
+    <p class="muted">Pick a game to see projected usage, minutes and stat lines for both teams, and calculate value bets for that game only.</p>
+    <p class="muted" th:if="${fixtures.isEmpty()}">No fixtures for this date. Run the ingestion in <a th:href="@{/admin}">Admin</a>.</p>
+    <div class="cards">
+        <a class="card matchcard" th:each="f : ${fixtures}"
+           th:href="@{/match(date=${date}, league=${f.league}, home=${f.home}, away=${f.away})}">
+            <span class="tag" th:text="${f.league}"></span>
+            <div class="big"><span th:text="${f.away}"></span> <span class="muted">@</span> <span th:text="${f.home}"></span></div>
+            <span class="muted">Open game &rarr;</span>
+        </a>
+    </div>
+</main>
+</body>
+</html>

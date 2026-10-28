@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head th:replace="~{fragments :: head('Value bets')}"></head>
+<body>
+<nav th:replace="~{fragments :: nav(${page})}"></nav>
+<main>
+    <div class="toolbar">
+        <h1>Value bets</h1>
+        <div class="daytabs">
+            <a th:href="@{/(date=${yesterday})}" th:classappend="${date == yesterday} ? 'on'">Yesterday</a>
+            <a th:href="@{/(date=${today})}" th:classappend="${date == today} ? 'on'">Today</a>
+            <a th:href="@{/(date=${tomorrow})}" th:classappend="${date == tomorrow} ? 'on'">Tomorrow</a>
+            <form method="get" class="inline"><input type="date" name="date" th:value="${date}" onchange="this.form.submit()"></form>
+        </div>
+    </div>
+    <p class="muted">Dates follow the NBA calendar (US Eastern time): tonight's games in Greece are listed under the
+        US date, which is why after midnight "Today" is still yesterday's date for you.</p>
+
+    <div class="stats">
+        <div class="stat"><span th:text="${#numbers.formatDecimal(settings.bankroll, 1, 0)} + ' EUR'"></span><small>bankroll</small></div>
+        <div class="stat"><span th:classappend="${summary.monthProfit >= 0} ? 'pos' : 'neg'"
+                                th:text="${#numbers.formatDecimal(summary.monthProfit, 1, 0)} + ' / ' + ${#numbers.formatDecimal(summary.monthTarget, 1, 0)} + ' EUR'"></span><small>this month vs target</small></div>
+        <div class="stat"><span th:text="${oddsCount}"></span><small>odds lines loaded</small></div>
+        <div class="stat"><span th:text="${all != null} ? ${all.size()} : 0"></span><small>props analysed</small></div>
+        <div class="stat"><span th:text="${summary.pending}"></span><small>open bets</small></div>
+    </div>
+
+    <form method="post" th:action="@{/odds/refresh}" class="row refresh">
+        <input type="hidden" name="date" th:value="${date}">
+        <input type="hidden" name="back" value="dashboard">
+        <button type="submit" th:disabled="${providers == 0}">Fetch latest odds from bookmakers</button>
+        <span class="muted" th:if="${lastFetch != null}" th:text="'Last odds update: ' + ${lastFetch.replace('T', ' ').substring(0, 16)} + ' UTC'"></span>
+        <span class="muted" th:if="${lastFetch == null}">No odds for this date yet. Bookmakers publish player props only a few hours before tip-off.</span>
+    </form>
+    <div th:replace="~{fragments :: flash}"></div>
+    <p class="error" th:if="${error}" th:text="${error}"></p>
+
+    <h2>Top 3 picks</h2>
+    <p class="muted" th:if="${top != null and top.isEmpty()}">
+        Nothing clears the value threshold right now. Fetch odds, check that data is fresh in
+        <a th:href="@{/admin}">Admin</a>, and skip the day if nothing qualifies - that is normal.
+    </p>
+    <div class="cards">
+        <th:block th:each="v, it : ${top}"><div th:replace="~{fragments :: pickCard(${v}, ${it.count}, ${date}, ${moves})}"></div></th:block>
+    </div>
+
+    <h2 th:if="${edges != null and !edges.isEmpty()}">Biggest edges (possible bookmaker errors)</h2>
+    <p class="muted" th:if="${edges != null and !edges.isEmpty()}">EV of 15% or more. Big gaps are either mispriced lines or something
+        the model cannot see (injury, minutes limit, rest) - check news before betting these.</p>
+    <table th:if="${edges != null and !edges.isEmpty()}">
+        <tr><th>Player</th><th>Pick</th><th>Odds</th><th>Book</th><th>Market</th><th>Probability</th><th>Fair odds</th><th>EV</th><th>Stake</th></tr>
+        <tr th:each="v : ${edges}">
+            <td th:text="${v.odds.playerName}"></td>
+            <td th:text="${v.side} + ' ' + ${v.line} + ' ' + ${v.odds.stat.label}"></td>
+            <td th:text="${#numbers.formatDecimal(v.bookOdds, 1, 2)}"></td>
+            <td th:text="${v.odds.bookmaker}"></td>
+            <td th:text="${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'"></td>
+            <td class="prob" th:classappend="${v.pFinal >= 0.6} ? 'hi' : (${v.pFinal >= 0.45} ? 'mid' : 'lo')" th:title="'Model probability this pick wins. Break-even at these odds: ' + ${#numbers.formatDecimal(100 / v.bookOdds, 1, 0)} + '%'"><b th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b><div class="ubar"><div th:style="'width:' + ${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></div></div></td>
+<td th:text="${#numbers.formatDecimal(1 / v.pFinal, 1, 2)}" title="Odds at which this pick would break even by our model"></td>
+            <td class="pos" th:text="'+' + ${#numbers.formatDecimal(v.ev * 100, 1, 0)} + '%'"></td>
+            <td th:text="${#numbers.formatDecimal(v.stake, 1, 0)} + ' EUR'"></td>
+        </tr>
+    </table>
+
+    <h2>All candidates</h2>
+    <div class="row filters" th:if="${all != null and !all.isEmpty()}">
+        <input type="search" id="q" placeholder="Filter by player, team, stat..." oninput="applyFilter()">
+        <label><input type="checkbox" id="onlyValue" checked onchange="applyFilter()"> only positive EV</label>
+        <span class="muted" id="count"></span>
+    </div>
+    <table id="cands" th:if="${all != null and !all.isEmpty()}">
+        <tr><th>Player</th><th>Game</th><th>Pick</th><th>Odds</th><th>Book</th><th>Projection</th><th>Usage</th><th>Market</th><th>Probability</th><th>Fair odds</th><th>EV</th><th>Stake</th></tr>
+        <tr th:each="v : ${all}" th:attr="data-ev=${v.ev}">
+            <td th:text="${v.odds.playerName}"></td>
+            <td th:text="${v.prediction.team} + (${v.prediction.home} ? ' vs ' : ' @ ') + ${v.prediction.opp}"></td>
+            <td th:text="${v.side} + ' ' + ${v.line} + ' ' + ${v.odds.stat.label}"></td>
+            <td th:text="${#numbers.formatDecimal(v.bookOdds, 1, 2)}"></td>
+            <td th:text="${v.odds.bookmaker}"></td>
+            <td th:text="${#numbers.formatDecimal(v.prediction.mean, 1, 1)}"></td>
+            <td th:text="${#numbers.formatDecimal(v.prediction.usage, 1, 0)} + '%'"></td>
+            <td th:text="${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'"></td>
+            <td class="prob" th:classappend="${v.pFinal >= 0.6} ? 'hi' : (${v.pFinal >= 0.45} ? 'mid' : 'lo')" th:title="'Model probability this pick wins. Break-even at these odds: ' + ${#numbers.formatDecimal(100 / v.bookOdds, 1, 0)} + '%'"><b th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b><div class="ubar"><div th:style="'width:' + ${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></div></div></td>
+<td th:text="${#numbers.formatDecimal(1 / v.pFinal, 1, 2)}" title="Odds at which this pick would break even by our model"></td>
+            <td th:classappend="${v.ev > 0} ? 'pos' : 'neg'" th:text="${#numbers.formatDecimal(v.ev * 100, 1, 1)} + '%'"></td>
+            <td th:text="${v.stake > 0} ? ${#numbers.formatDecimal(v.stake, 1, 0)} : '-'"></td>
+        </tr>
+    </table>
+
+    <h2>Games on this date</h2>
+    <p class="muted" th:if="${fixtures.isEmpty()}">No fixtures in the schedule. Run the ingestion in Admin.</p>
+    <div class="chips">
+        <span class="chip" th:each="f : ${fixtures}"><b th:text="${f.league}"></b> <span th:text="${f.away} + ' @ ' + ${f.home}"></span></span>
+    </div>
+</main>
+<script>
+function applyFilter() {
+    const q = document.getElementById('q').value.toLowerCase();
+    const onlyValue = document.getElementById('onlyValue').checked;
+    let shown = 0;
+    document.querySelectorAll('#cands tr[data-ev]').forEach(r => {
+        const ok = r.textContent.toLowerCase().includes(q) && (!onlyValue || parseFloat(r.dataset.ev) > 0);
+        r.style.display = ok ? '' : 'none';
+        shown += ok ? 1 : 0;
+    });
+    document.getElementById('count').textContent = shown + ' shown';
+}
+if (document.getElementById('cands')) applyFilter();
+</script>
+</body>
+</html>
