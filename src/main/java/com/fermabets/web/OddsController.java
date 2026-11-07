@@ -46,12 +46,20 @@ public class OddsController {
         return "redirect:/odds?date=" + date;
     }
 
+    @GetMapping("/odds/refresh")
+    public String refreshGet(@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        LocalDate day = date == null ? com.fermabets.AppClock.today() : date;
+        return "redirect:/?date=" + day;
+    }
+
     @PostMapping("/odds/refresh")
     public String refresh(@RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
                           @RequestParam(required = false) String back, RedirectAttributes ra) {
         var result = odds.refreshFromProviders(date);
         List<String> problems = result.problems();
-        ra.addFlashAttribute("message", "Fetched " + result.imported() + " odds lines from bookmakers.");
+        ra.addFlashAttribute("message", result.imported() == 0 && !problems.isEmpty()
+                ? problems.get(0)
+                : "Fetched " + result.imported() + " odds lines from bookmakers.");
         ra.addFlashAttribute("problems", problems.size() > 12
                 ? new ArrayList<>(problems.subList(0, 12)) {{ add("... and " + (problems.size() - 12) + " more"); }}
                 : problems);

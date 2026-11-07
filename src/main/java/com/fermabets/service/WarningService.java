@@ -36,7 +36,11 @@ public class WarningService {
         List<Injury> mine = repo.injuries(league, date, team);
         Optional<Spread> spread = repo.spread(league, date, homeTeam, awayTeam);
         String key = repo.playerKey(playerId).orElseGet(() -> PlayerMatcher.key(playerName));
-        return build(playerName, key, team, opp, home, mine, spread, have);
+        List<String> out = build(playerName, key, team, opp, home, mine, spread, have);
+        if (playedYesterday(playerId, date)) {
+            out.add("Back-to-back: έπαιξε χθες. Τα λεπτά/usage προσαρμόζονται από το ιστορικό B2B, τα 55/45 μένουν.");
+        }
+        return out;
     }
 
     /** Game-level lines for the match page (both sides + the handicap). */
@@ -99,6 +103,13 @@ public class WarningService {
         Double hcap = spread.map(s -> s.forTeam(team)).orElse(null);
         out.add(blowoutLine(team, hcap));
         return out;
+    }
+
+    private boolean playedYesterday(String playerId, LocalDate date) {
+        Integer n = repo.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM player_game WHERE player_id=? AND game_date=? AND minutes>0", Integer.class,
+                playerId, date.minusDays(1).toString());
+        return n != null && n > 0;
     }
 
     public static boolean isBlowout(double handicap) {

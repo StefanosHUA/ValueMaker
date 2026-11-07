@@ -30,10 +30,12 @@ public class ClvService {
     private final BetService bets;
     private final ValueEngine engine;
     private final IngestService ingest;
+    private final ModelService models;
 
     public ClvService(DataRepository repo, OddsService odds, BetService bets, ValueEngine engine,
-                      IngestService ingest) {
+                      IngestService ingest, ModelService models) {
         this.ingest = ingest;
+        this.models = models;
         this.repo = repo;
         this.odds = odds;
         this.bets = bets;
@@ -46,6 +48,12 @@ public class ClvService {
                 + " league TEXT, player_id TEXT, player_name TEXT, stat TEXT, line REAL, side TEXT, bookmaker TEXT,"
                 + " open_odds REAL, close_odds REAL, p_model REAL, p_final REAL, close_fair REAL, clv REAL,"
                 + " result TEXT, actual REAL)");
+        repo.jdbc().execute("CREATE TABLE IF NOT EXISTS exclude_game (league TEXT NOT NULL, game_date TEXT NOT NULL,"
+                + " home TEXT NOT NULL, away TEXT NOT NULL, reason TEXT,"
+                + " PRIMARY KEY (league, game_date, home, away))");
+        repo.excludeGame("NBA", LocalDate.of(2026, 10, 31), "UTA", "POR",
+                "Live Superbet refresh during UTA-POR; results stay out of the books");
+        repo.voidExcludedPicks();
         for (String col : List.of("close_odds REAL", "clv REAL")) {
             try {
                 repo.jdbc().execute("ALTER TABLE bet ADD COLUMN " + col);
@@ -53,30 +61,37 @@ public class ClvService {
                 // column already exists
             }
         }
+        refit();
+    }
+
+    /** Refit the parallel probability shift from settled pick_log + placed bets. 55/45 stays put. */
+    public void refit() {
         engine.setCalibration(stats().shift());
     }
 
     /** Settlement and calibration only. Odds are fetched when you press Fetch, not on a timer. */
     @Scheduled(initialDelay = 120_000, fixedDelay = 600_000)
-    public synchronized void run() {
-        if (ingest.status().running()) {
-            log.info("CLV job skipped: an ingest is writing to the database");
-            return;
-        }
+    public void run() {
         try {
             LocalDate d0 = AppClock.today();
-            int closed = logPicks(d0) + captureClosing();
             int settled = bets.settlePending() + settlePicks();
-            engine.setCalibration(stats().shift());
-            log.info("CLV job: {} closing lines stamped, {} bets settled", closed, settled);
+            int closed = logPicks(d0.minusDays(1)) + logPicks(d0) + captureClosing();
+            settled += settlePicks();
+            if (settled > 0) {
+                models.invalidate();
+            }
+            refit();
+            log.info("CLV job: {} closing lines stamped, {} bets settled, calibration {}", closed, settled,
+                    String.format(Locale.US, "%+.3f", engine.calibration()));
         } catch (RuntimeException e) {
             log.warn("CLV job failed: {}", e.getMessage());
         }
     }
 
     private List<Map<String, Object>> pending() {
-        return repo.jdbc().queryForList("SELECT id, game_date, bookmaker, player_id, stat, side, line, odds FROM bet"
-                + " WHERE result='PENDING' AND player_id IS NOT NULL");
+        return repo.jdbc().queryForList(
+                "SELECT id, game_date, league, bookmaker, player_id, stat, side, line, odds FROM bet"
+                        + " WHERE result='PENDING' AND player_id IS NOT NULL");
     }
 
     /** Stamps the latest seen price of each open bet whose game day has arrived; it freezes once the book pulls it. */
@@ -85,7 +100,7 @@ public class ClvService {
         int n = 0;
         for (Map<String, Object> b : pending()) {
             LocalDate d = LocalDate.parse((String) b.get("game_date"));
-            if (d.isAfter(today)) {
+            if (d.isAfter(today) || repo.excludedPlayer((String) b.get("league"), d, (String) b.get("player_id"))) {
                 continue;
             }
             var latest = odds.latest((String) b.get("bookmaker"), d, (String) b.get("player_id"),
@@ -111,18 +126,9 @@ public class ClvService {
     int logPicks(LocalDate date) {
         int n = 0;
         for (ValueEngine.ValueBet v : engine.top(engine.evaluate(date), 40)) {
-            try {
-                n += logPick(date, v);
-            } catch (RuntimeException e) {
-                log.warn("Skipping pick {}: {}", v.odds().playerName(), e.getMessage());
+            if (repo.excludedFixture(v.odds().league(), date, v.prediction().team(), v.prediction().opp())) {
+                continue;
             }
-        }
-        return n;
-    }
-
-    private int logPick(LocalDate date, ValueEngine.ValueBet v) {
-        int n = 0;
-        {
             String side = v.side();
             Object[] key = {date.toString(), v.odds().playerId(), v.odds().stat().name(), v.line(), side,
                     v.odds().bookmaker()};
@@ -144,17 +150,22 @@ public class ClvService {
     }
 
     /** Settles logged picks from stored box scores, and starts the matching ingest when finished games are missing. */
-    int settlePicks() {
+    public int settlePicks() {
         LocalDate today = AppClock.today();
         int n = 0;
         Set<IngestService.Source> need = new HashSet<>();
         for (Map<String, Object> p : repo.jdbc().queryForList("SELECT id, game_date, league, player_id, stat, line,"
-                + " side FROM pick_log WHERE result IS NULL AND game_date < ?", today.plusDays(1).toString())) {
+                + " side, result FROM pick_log WHERE (result IS NULL OR result='VOID') AND game_date < ?",
+                today.plusDays(1).toString())) {
             String league = (String) p.get("league"), date = (String) p.get("game_date");
-            Integer covered = repo.jdbc().queryForObject(
-                    "SELECT COUNT(*) FROM player_game WHERE league=? AND game_date=?", Integer.class, league, date);
-            if (covered == null || covered == 0) {
-                if (!LocalDate.parse(date).isAfter(today.minusDays(0))) {
+            if (repo.excludedPlayer(league, LocalDate.parse(date), (String) p.get("player_id"))) {
+                continue;
+            }
+            if (!teamCovered(league, date, (String) p.get("player_id"))) {
+                if ("VOID".equals(p.get("result"))) {
+                    repo.jdbc().update("UPDATE pick_log SET result=NULL, actual=NULL WHERE id=?", p.get("id"));
+                }
+                if (!LocalDate.parse(date).isAfter(today) && !ingest.status().running()) {
                     need.add(league.equals("NBA") ? IngestService.Source.NBA : league.equals("EL")
                             ? IngestService.Source.EUROLEAGUE : IngestService.Source.EUROCUP);
                 }
@@ -172,6 +183,8 @@ public class ClvService {
             if (!actual.isEmpty()) {
                 a = actual.get(0);
                 res = a == line ? "PUSH" : ((a > line) == "OVER".equals(p.get("side"))) ? "WIN" : "LOSS";
+            } else if ("VOID".equals(p.get("result"))) {
+                continue;
             }
             repo.jdbc().update("UPDATE pick_log SET result=?, actual=? WHERE id=?", res, a, p.get("id"));
             n++;
@@ -180,9 +193,24 @@ public class ClvService {
         return n;
     }
 
+    /** VOID only when this player's team already has a box that night. League-wide boxes are not enough. */
+    private boolean teamCovered(String league, String date, String playerId) {
+        List<String> teams = repo.jdbc().query(
+                "SELECT team FROM player_game WHERE player_id=? ORDER BY game_date DESC LIMIT 1",
+                (rs, i) -> rs.getString(1), playerId);
+        if (teams.isEmpty()) {
+            return false;
+        }
+        Integer n = repo.jdbc().queryForObject(
+                "SELECT COUNT(*) FROM team_game WHERE league=? AND game_date=? AND team=?", Integer.class, league,
+                date, teams.get(0));
+        return n != null && n > 0;
+    }
+
     public Stats stats() {
         List<Map<String, Object>> rows = repo.jdbc().queryForList(
-                "SELECT clv, result, p_model FROM pick_log WHERE close_odds IS NOT NULL");
+                "SELECT clv, result, p_model FROM pick_log WHERE close_odds IS NOT NULL AND"
+                        + DataRepository.notExcludedSql("pick_log"));
         int clvN = 0, beat = 0, settled = 0, wins = 0;
         double clvSum = 0, probSum = 0, brier = 0;
         for (Map<String, Object> r : rows) {
@@ -199,6 +227,16 @@ public class ClvService {
                 probSum += p;
                 brier += (p - hit) * (p - hit);
             }
+        }
+        for (Map<String, Object> r : repo.jdbc().queryForList(
+                "SELECT model_prob, result FROM bet WHERE result IN ('WIN','LOSS') AND model_prob IS NOT NULL AND"
+                        + DataRepository.notExcludedSql("bet"))) {
+            double p = ((Number) r.get("model_prob")).doubleValue();
+            double hit = "WIN".equals(r.get("result")) ? 1 : 0;
+            settled++;
+            wins += (int) hit;
+            probSum += p;
+            brier += (p - hit) * (p - hit);
         }
         double hitRate = settled == 0 ? 0 : (double) wins / settled;
         double avgProb = settled == 0 ? 0 : probSum / settled;

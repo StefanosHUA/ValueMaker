@@ -74,6 +74,10 @@ public class StoiximanProvider implements OddsService.OddsProvider {
                 state = initialState(get(BASE + league.path()));
             } catch (Exception e) {
                 log.warn("Stoiximan league page {} failed: {}", league.path(), e.getMessage());
+                if (accessBlocked(e)) {
+                    throw new IllegalStateException(
+                            "Stoiximan blocked automated fetch (HTTP 403). Wait until tomorrow and press Fetch once.");
+                }
                 continue;
             }
             Map<Long, Long> found = new LinkedHashMap<>();
@@ -103,6 +107,11 @@ public class StoiximanProvider implements OddsService.OddsProvider {
         return out;
     }
 
+    private static boolean accessBlocked(Exception e) {
+        String m = e.getMessage();
+        return m != null && (m.contains("HTTP 403") || m.contains("Connection reset"));
+    }
+
     private String get(String url) throws Exception {
         HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(40))
                 .header("User-Agent", UA).header("Accept-Language", "el,en;q=0.8").GET().build();
@@ -121,7 +130,6 @@ public class StoiximanProvider implements OddsService.OddsProvider {
         return mapper.readTree(html.substring(i + STATE_MARK.length()));
     }
 
-    /** Events are objects with startTime, id and a url containing /apodoseis/. */
     static void collectEvents(JsonNode n, Map<Long, Long> out) {
         if (n.isObject()) {
             if (n.has("startTime") && n.has("id") && n.path("url").asText("").contains("/apodoseis/")) {

@@ -8,6 +8,7 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -20,14 +21,16 @@ public class DashboardController {
     private final SettingsService settings;
     private final OddsService odds;
     private final BetService bets;
+    private final LevelBook levels;
 
     public DashboardController(ValueEngine engine, DataRepository repo, SettingsService settings, OddsService odds,
-                               BetService bets) {
+                               BetService bets, LevelBook levels) {
         this.engine = engine;
         this.repo = repo;
         this.settings = settings;
         this.odds = odds;
         this.bets = bets;
+        this.levels = levels;
     }
 
     @GetMapping("/")
@@ -53,6 +56,10 @@ public class DashboardController {
             model.addAttribute("top", top);
             model.addAttribute("all", all);
             model.addAttribute("edges", all.stream().filter(v -> v.ev() >= 0.15).limit(12).toList());
+            model.addAttribute("unders", all.stream()
+                    .filter(v -> "UNDER".equals(v.side()) && v.ev() > 0)
+                    .limit(12)
+                    .toList());
             Map<Long, String> moves = new HashMap<>();
             for (ValueEngine.ValueBet v : all) {
                 odds.opening(v.odds()).ifPresent(o -> {
@@ -64,9 +71,14 @@ public class DashboardController {
             }
             model.addAttribute("moves", moves);
             model.addAttribute("skipped", engine.skipped(day));
+            List<ValueEngine.ValueBet> hot = all.stream().filter(ValueEngine.ValueBet::onFire)
+                    .sorted(Comparator.comparingInt(ValueEngine.ValueBet::fireStreak).reversed()).toList();
+            model.addAttribute("hotOver", hot.stream().filter(v -> "OVER".equals(v.side())).toList());
+            model.addAttribute("hotUnder", hot.stream().filter(v -> "UNDER".equals(v.side())).toList());
         } catch (RuntimeException e) {
             model.addAttribute("error", e.getMessage());
         }
+        model.addAttribute("levels", levels.report(day));
         return "dashboard";
     }
 }

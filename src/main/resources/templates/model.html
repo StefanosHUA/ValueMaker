@@ -6,7 +6,7 @@
 <main>
     <h1>Model validation</h1>
     <p class="muted">Trains on the first 75% of dates and tests on the rest against half-point lines near each player's recent form.
-        Brier score: lower is better; the model must beat the naive form-only baseline to be worth using.</p>
+        Brier score: lower is better. Combo learns the last-5 share from the train dates (least squares) and scores it on the test dates against season-only and last-5-only.</p>
     <form method="get" class="row">
         <select name="league"><option th:each="l : ${T(java.util.List).of('NBA','EL','EC')}" th:value="${l}" th:text="${l}" th:selected="${l == league}"></option></select>
         <select name="stat"><option th:each="s : ${stats}" th:value="${s}" th:text="${s}" th:selected="${s == stat}"></option></select>
@@ -21,6 +21,34 @@
                <span th:class="${result.brierModel < result.brierNaive} ? 'pos' : 'neg'" th:text="${result.brierModel < result.brierNaive} ? 'model better' : 'model not better'"></span></p>
             <p class="muted" th:text="'Dispersion k = ' + ${#numbers.formatDecimal(result.dispersion, 1, 3)}"></p>
         </div>
+        <h2>Σεζόν + last-5 combo (μαθημένο βάρος ανά stat)</h2>
+        <table>
+            <tr>
+                <th>Stat</th>
+                <th>Games</th>
+                <th>Last-5 share</th>
+                <th>RMSE σεζόν</th>
+                <th>RMSE last-5</th>
+                <th>RMSE combo</th>
+                <th>Brier σεζόν</th>
+                <th>Brier last-5</th>
+                <th>Brier combo</th>
+                <th></th>
+            </tr>
+            <tr th:each="p : ${result.projections}" th:class="${p.stat == result.stat} ? 'hl' : ''">
+                <td th:text="${p.stat}"></td>
+                <td th:text="${p.n}"></td>
+                <td th:text="${#numbers.formatDecimal(p.weight * 100, 1, 0)} + '%'"></td>
+                <td th:text="${#numbers.formatDecimal(p.rmseSeason, 1, 3)}"></td>
+                <td th:text="${#numbers.formatDecimal(p.rmseLast5, 1, 3)}"></td>
+                <td th:text="${#numbers.formatDecimal(p.rmseCombo, 1, 3)}"></td>
+                <td th:text="${#numbers.formatDecimal(p.brierSeason, 1, 4)}"></td>
+                <td th:text="${#numbers.formatDecimal(p.brierLast5, 1, 4)}"></td>
+                <td th:text="${#numbers.formatDecimal(p.brierCombo, 1, 4)}"></td>
+                <td th:class="${p.comboBetter} ? 'pos' : 'neg'"
+                    th:text="${p.comboBetter} ? 'combo better' : 'combo not better'"></td>
+            </tr>
+        </table>
         <h2>Learned feature effects (per unit)</h2>
         <table>
             <tr><th>Feature</th><th>Coefficient</th></tr>

@@ -3,3 +3,4 @@ euroleague-api
 pandas
 lxml
 requests
+playwright

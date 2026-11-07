@@ -56,18 +56,28 @@
             <summary>All analysed props for this game (<span th:text="${all.size()}"></span>)</summary>
             <table>
                 <tr><th>Player</th><th>Pick</th><th>Odds</th><th>Book</th><th>Projection</th><th>Usage</th><th>Market</th><th>Probability</th><th>Fair odds</th><th>EV</th></tr>
-                <tr th:each="v : ${all}">
+                <th:block th:each="v : ${all}">
+                <tr>
                     <td th:text="${v.odds.playerName}"></td>
                     <td th:text="${v.side} + ' ' + ${v.line} + ' ' + ${v.odds.stat.label}"></td>
                     <td th:text="${#numbers.formatDecimal(v.bookOdds, 1, 2)}"></td>
                     <td th:text="${v.odds.bookmaker}"></td>
-                    <td th:text="${#numbers.formatDecimal(v.prediction.mean, 1, 1)}"></td>
-                    <td th:text="${#numbers.formatDecimal(v.prediction.usage, 1, 0)} + '%'"></td>
+                    <td data-col="proj" th:text="${#numbers.formatDecimal(v.prediction.mean, 1, 1)}"></td>
+                    <td data-col="usage" th:text="${#numbers.formatDecimal(v.prediction.usage, 1, 0)} + '%'"></td>
                     <td th:text="${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'"></td>
-                    <td class="prob" th:classappend="${v.pFinal >= 0.6} ? 'hi' : (${v.pFinal >= 0.45} ? 'mid' : 'lo')" th:title="'Model probability this pick wins. Break-even at these odds: ' + ${#numbers.formatDecimal(100 / v.bookOdds, 1, 0)} + '%'"><b th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b><div class="ubar"><div th:style="'width:' + ${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></div></div></td>
-<td th:text="${#numbers.formatDecimal(1 / v.pFinal, 1, 2)}" title="Odds at which this pick would break even by our model"></td>
-                    <td th:classappend="${v.ev > 0} ? 'pos' : 'neg'" th:text="${#numbers.formatDecimal(v.ev * 100, 1, 1)} + '%'"></td>
+                    <td data-col="p" class="prob" th:classappend="${v.pFinal >= 0.6} ? 'hi' : (${v.pFinal >= 0.45} ? 'mid' : 'lo')" th:title="'Model probability this pick wins. Break-even at these odds: ' + ${#numbers.formatDecimal(100 / v.bookOdds, 1, 0)} + '%'"><b th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b><div class="ubar"><div th:style="'width:' + ${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></div></div></td>
+<td data-col="fair" th:text="${#numbers.formatDecimal(1 / v.pFinal, 1, 2)}" title="Odds at which this pick would break even by our model"></td>
+                    <td data-col="ev" th:classappend="${v.ev > 0} ? 'pos' : 'neg'" th:text="${#numbers.formatDecimal(v.ev * 100, 1, 1)} + '%'"></td>
                 </tr>
+                <tr class="whatif-row" th:if="${v.fermabets}">
+                    <td colspan="10">
+                        <details>
+                            <summary>Δοκίμασε δικές σου προβλέψεις — κενό πεδίο = τιμή μοντέλου</summary>
+                            <div th:replace="~{fragments :: whatIf(${v})}"></div>
+                        </details>
+                    </td>
+                </tr>
+                </th:block>
             </table>
         </details>
     </th:block>
@@ -101,5 +111,6 @@
         </div>
     </div>
 </main>
+<script th:replace="~{fragments :: whatifJs}"></script>
 </body>
 </html>

@@ -147,9 +147,6 @@ public class OddsService {
             DataRepository.Player match = null;
             String league = null;
             for (var e : byLeague.entrySet()) {
-                if (l.group() != null && l.group().contains("|") && !l.group().startsWith(e.getKey() + "|")) {
-                    continue;
-                }
                 match = PlayerMatcher.match(e.getValue(), l.playerName());
                 if (match != null) {
                     league = e.getKey();
@@ -249,6 +246,10 @@ public class OddsService {
             rs.getLong(1), rs.getString(2), rs.getString(3), LocalDate.parse(rs.getString(4)), rs.getString(5),
             rs.getString(6), Stat.valueOf(rs.getString(7)), rs.getDouble(8),
             rs.getObject(9) == null ? null : rs.getDouble(9), rs.getObject(10) == null ? null : rs.getDouble(10));
+
+    public Optional<OddsRow> byId(long id) {
+        return repo.jdbc().query(SELECT + " WHERE id=?", ROW_MAPPER, id).stream().findFirst();
+    }
 
     /** Latest snapshot per bookmaker/player/stat/line. */
     public List<OddsRow> forDate(LocalDate date) {

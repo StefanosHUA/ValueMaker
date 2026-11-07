@@ -21,6 +21,89 @@
         <li th:each="p : ${problems}" th:text="${p}"></li>
     </ul>
 </div>
+<div th:fragment="levels(levels)" class="levels" th:if="${levels != null}">
+    <h2>Επίπεδα εμπιστοσύνης</h2>
+    <p class="muted">Κάθε βραδιά που κλείνουν αγώνες προσθέτει μια στήλη. Κοίτα hit vs pred για να ξέρεις σε ποια ποσοστά και αποδόσεις να κινείσαι. Χρειάζονται 8+ δείγματα για «εμπιστεύσου».</p>
+    <div class="twocol">
+        <div>
+            <h3>Ποσοστό μοντέλου</h3>
+            <table class="levels-table">
+                <tr>
+                    <th>Επίπεδο</th>
+                    <th>Σεζόν</th>
+                    <th>Pred</th>
+                    <th>Hit</th>
+                    <th>Εμπιστοσύνη</th>
+                    <th th:each="d : ${levels.nights}" th:text="${d}"></th>
+                </tr>
+                <tr th:each="r : ${levels.probs}">
+                    <td th:text="${r.label}"></td>
+                    <td th:text="${r.season.shortText()}"></td>
+                    <td th:text="${r.season.n == 0} ? '—' : ${#numbers.formatDecimal(r.season.pred * 100, 1, 0)} + '%'"></td>
+                    <td th:text="${r.season.n == 0} ? '—' : ${#numbers.formatDecimal(r.season.hit * 100, 1, 0)} + '%'"></td>
+                    <td th:classappend="'trust-' + ${r.trustClass}" th:text="${r.trust}"></td>
+                    <td th:each="c : ${r.nights}" th:text="${c.shortText()}"></td>
+                </tr>
+            </table>
+        </div>
+        <div>
+            <h3>Αποδόσεις</h3>
+            <table class="levels-table">
+                <tr>
+                    <th>Επίπεδο</th>
+                    <th>Σεζόν</th>
+                    <th>Pred</th>
+                    <th>Hit</th>
+                    <th>Εμπιστοσύνη</th>
+                    <th th:each="d : ${levels.nights}" th:text="${d}"></th>
+                </tr>
+                <tr th:each="r : ${levels.odds}">
+                    <td th:text="${r.label}"></td>
+                    <td th:text="${r.season.shortText()}"></td>
+                    <td th:text="${r.season.n == 0} ? '—' : ${#numbers.formatDecimal(r.season.pred * 100, 1, 0)} + '%'"></td>
+                    <td th:text="${r.season.n == 0} ? '—' : ${#numbers.formatDecimal(r.season.hit * 100, 1, 0)} + '%'"></td>
+                    <td th:classappend="'trust-' + ${r.trustClass}" th:text="${r.trust}"></td>
+                    <td th:each="c : ${r.nights}" th:text="${c.shortText()}"></td>
+                </tr>
+            </table>
+        </div>
+    </div>
+    <div class="combo-best card" th:if="${levels.best != null}" th:classappend="'trust-' + ${levels.best.trustClass}">
+        <div class="big" th:text="${levels.best.headline()}"></div>
+        <div th:text="${levels.best.season.shortText()} + ' · hit ' + (${levels.best.season.n == 0} ? '—' : ${#numbers.formatDecimal(levels.best.season.hit * 100, 1, 0)} + '%') + ' / pred ' + (${levels.best.season.n == 0} ? '—' : ${#numbers.formatDecimal(levels.best.season.pred * 100, 1, 0)} + '%') + ' · ROI ' + ${levels.best.roiText()} + ' · ' + ${levels.best.trust}"></div>
+        <p class="muted small">Κατάταξη με πραγματικό ROI (1 μονάδα ανά pick). Κελιά με 3+ δείγματα· τα υπερεκτιμημένα πέφτουν κάτω. Με 8+ γίνεται «εμπιστεύσου».</p>
+    </div>
+    <p class="muted" th:if="${levels.best == null}">Δεν υπάρχει ακόμα συνδυασμός με 3+ κλεισμένα picks.</p>
+    <h3>Πλέγμα πιθανότητα × απόδοση</h3>
+    <table class="levels-table combo-grid" th:if="${levels.oLabels != null and !levels.oLabels.isEmpty()}">
+        <tr>
+            <th>p \ odds</th>
+            <th th:each="o : ${levels.oLabels}" th:text="${o}"></th>
+        </tr>
+        <tr th:each="pLabel, pi : ${levels.pLabels}">
+            <th th:text="${pLabel}"></th>
+            <td th:each="oLabel, oi : ${levels.oLabels}"
+                th:with="c=${levels.combos[pi.index * levels.oLabels.size() + oi.index]}"
+                th:classappend="${c.season.n == 0} ? 'trust-low' : (${c == levels.best} ? 'combo-win trust-' + ${c.trustClass} : 'trust-' + ${c.trustClass})"
+                th:title="${c.pLabel} + ' × ' + ${c.oLabel} + ' · ' + ${c.trust}"
+                th:text="${c.season.n == 0} ? '—' : ${c.season.shortText()} + ' ' + ${c.roiText()}"></td>
+        </tr>
+    </table>
+    <h3 th:if="${levels.ranked != null and !levels.ranked.isEmpty()}">Κατάταξη συνδυασμών</h3>
+    <table class="levels-table" th:if="${levels.ranked != null and !levels.ranked.isEmpty()}">
+        <tr><th>#</th><th>Πιθανότητα</th><th>Απόδοση</th><th>n</th><th>Hit</th><th>Pred</th><th>ROI</th><th>Εμπιστοσύνη</th></tr>
+        <tr th:each="c, it : ${levels.ranked}" th:classappend="${it.index == 0} ? 'combo-win'">
+            <td th:text="${it.count}"></td>
+            <td th:text="${c.pLabel}"></td>
+            <td th:text="${c.oLabel}"></td>
+            <td th:text="${c.season.shortText()}"></td>
+            <td th:text="${#numbers.formatDecimal(c.season.hit * 100, 1, 0)} + '%'"></td>
+            <td th:text="${#numbers.formatDecimal(c.season.pred * 100, 1, 0)} + '%'"></td>
+            <td th:classappend="${c.roi >= 0} ? 'pos' : 'neg'" th:text="${c.roiText()}"></td>
+            <td th:classappend="'trust-' + ${c.trustClass}" th:text="${c.trust}"></td>
+        </tr>
+    </table>
+</div>
         <div class="card top" th:fragment="pickCard(v, rank, date, moves)" th:classappend="${v.suspicious or (v.warnings != null and !v.warnings.isEmpty())} ? 'warn'">
             <div class="rank" th:text="'#' + ${rank}"></div>
             <div class="big" th:text="${v.odds.playerName}"></div>
@@ -32,14 +115,15 @@
                 <small class="muted" th:if="${moves.containsKey(v.odds.id)}" th:text="'(moved ' + ${moves.get(v.odds.id)} + ')'"></small>
             </div>
             <div class="muted" th:text="${v.prediction.team} + (${v.prediction.home} ? ' vs ' : ' @ ') + ${v.prediction.opp}"></div>
-            <div class="usage" th:title="'Share of team possessions this player uses while on the floor. 20% is average, stars 28%+.'">Usage <b th:text="${#numbers.formatDecimal(v.prediction.usage, 1, 1)} + '%'"></b> <span class="muted" th:if="${!v.fermabets}" th:text="'(older form ' + ${#numbers.formatDecimal(v.prediction.formUsage, 1, 1)} + '%)'"></span> &middot; <b th:text="'~' + ${#numbers.formatDecimal(v.prediction.roleMinutes, 1, 0)} + ' min'"></b></div>
+            <div th:if="${v.onFire}"><span class="tag fire" th:text="${v.fireLabel()}"></span></div>
+            <div class="usage" th:title="'Share of team possessions this player uses while on the floor. 20% is average, stars 28%+.'">Usage <b class="whatif-usage" th:text="${#numbers.formatDecimal(v.prediction.usage, 1, 1)} + '%'"></b> <span class="muted" th:if="${!v.fermabets}" th:text="'(older form ' + ${#numbers.formatDecimal(v.prediction.formUsage, 1, 1)} + '%)'"></span> &middot; <b class="whatif-mins" th:text="'~' + ${#numbers.formatDecimal(v.prediction.roleMinutes, 1, 0)} + ' min'"></b></div>
             <div class="meter" th:title="'Model ' + ${#numbers.formatDecimal(v.pModel * 100, 1, 0)} + '% / market ' + ${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'">
                 <div class="mkt" th:style="'width:' + ${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'"></div>
                 <div class="fin" th:style="'width:' + ${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></div>
             </div>
             <div class="muted small">win chance: market <b th:text="${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'"></b>
-                &rarr; our probability <b th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b>
-                &middot; EV <b class="pos" th:text="'+' + ${#numbers.formatDecimal(v.ev * 100, 1, 0)} + '%'"></b></div>
+                &rarr; our probability <b class="whatif-p" th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b>
+                &middot; EV <b class="pos whatif-ev" th:text="'+' + ${#numbers.formatDecimal(v.ev * 100, 1, 0)} + '%'"></b></div>
             <span class="tag sus" th:if="${v.suspicious}">model and market disagree a lot - check injury/news</span>
             <ul class="warns" th:if="${v.warnings != null and !v.warnings.isEmpty()}">
                 <li th:each="w : ${v.warnings}" th:text="${w}"
@@ -47,8 +131,9 @@
             </ul>
             <details>
                 <summary>Why?</summary>
-                <p class="muted" th:text="${v.explanation}"></p>
+                <p class="muted whatif-why" th:text="${v.explanation}"></p>
             </details>
+            <div th:replace="~{fragments :: whatIf(${v})}"></div>
             <form method="post" th:action="@{/bets/place}" class="row">
                 <input type="hidden" name="date" th:value="${date}">
                 <input type="hidden" name="league" th:value="${v.odds.league}">
@@ -59,10 +144,128 @@
                 <input type="hidden" name="side" th:value="${v.side}">
                 <input type="hidden" name="line" th:value="${v.line}">
                 <input type="hidden" name="odds" th:value="${v.bookOdds}">
-                <input type="hidden" name="prob" th:value="${v.pFinal}">
-                <label>Stake EUR <input type="number" th:step="${v.fermabets} ? '0.01' : '1'" min="0" name="stake" th:value="${v.fermabets} ? ${#numbers.formatDecimal(v.stake, 1, 2)} : ${#numbers.formatDecimal(v.stake, 1, 0)}" style="width:70px"></label>
+                <input type="hidden" name="prob" class="whatif-prob" th:value="${v.pFinal}">
+                <label>Stake EUR <input type="number" class="whatif-stake" th:step="${v.fermabets} ? '0.01' : '1'" min="0" name="stake" th:value="${v.fermabets} ? ${#numbers.formatDecimal(v.stake, 1, 2)} : ${#numbers.formatDecimal(v.stake, 1, 0)}" style="width:70px"></label>
                 <button type="submit">I placed this bet</button>
             </form>
         </div>
+        <div th:fragment="whatIf(v)" class="whatif" th:if="${v.fermabets and v.nbaProjection != null}"
+             th:attr="data-odds-id=${v.odds.id}, data-side=${v.side}">
+            <div class="whatif-title">Δοκίμασε δικές σου προβλέψεις</div>
+            <p class="muted small">Κενό πεδίο = κρατάει την τιμή του μοντέλου. Τα 55/45 δεν αλλάζουν.</p>
+            <div class="whatif-fields">
+                <label>Λεπτά <input type="number" step="0.1" min="0" name="minutes"
+                    th:placeholder="${#numbers.formatDecimal(v.nbaProjection.minutes, 1, 1)}"></label>
+                <label>Usage % <input type="number" step="0.1" min="0" name="usage"
+                    th:placeholder="${#numbers.formatDecimal(v.nbaProjection.usage, 1, 1)}"></label>
+                <label>FGA <input type="number" step="0.1" min="0" name="fga"
+                    th:placeholder="${#numbers.formatDecimal(v.nbaProjection.fga, 1, 1)}"></label>
+                <label>FTA <input type="number" step="0.1" min="0" name="fta"
+                    th:placeholder="${#numbers.formatDecimal(v.nbaProjection.fta, 1, 1)}"></label>
+                <label>3PA <input type="number" step="0.1" min="0" name="fg3a"
+                    th:placeholder="${#numbers.formatDecimal(v.nbaProjection.fg3a, 1, 1)}"></label>
+                <label>Pace <input type="number" step="0.1" min="0" name="pace"
+                    th:placeholder="${#numbers.formatDecimal(v.nbaProjection.pace, 1, 1)}"></label>
+            </div>
+            <div class="row">
+                <button type="button" class="whatif-run">Δοκίμασε</button>
+                <button type="button" class="whatif-reset">Επαναφορά</button>
+            </div>
+            <div class="whatif-result muted small"></div>
+        </div>
+        <script th:fragment="whatifJs">
+function whatIfNum(n, d) {
+    if (n == null || Number.isNaN(n)) return '—';
+    return Number(n).toFixed(d);
+}
+function whatIfPct(p) { return Math.round(Number(p) * 100) + '%'; }
+function whatIfEv(ev) {
+    const n = Math.round(Number(ev) * 100);
+    return (n >= 0 ? '+' : '') + n + '%';
+}
+async function runWhatIf(box) {
+    const id = box.dataset.oddsId;
+    const params = new URLSearchParams({oddsId: id, side: box.dataset.side || 'OVER'});
+    ['minutes','usage','fga','fta','fg3a','pace'].forEach(k => {
+        const el = box.querySelector('[name=' + k + ']');
+        const v = el ? el.value.trim() : '';
+        if (v !== '') params.set(k, v.replace(',', '.'));
+    });
+    const out = box.querySelector('.whatif-result');
+    out.textContent = 'Υπολογισμός…';
+    try {
+        const res = await fetch('/whatif?' + params.toString());
+        const data = await res.json();
+        if (!data.ok) { out.textContent = data.error || 'Αποτυχία'; return; }
+        const kept = (data.kept && data.kept.length) ? ' Κενά έμειναν: ' + data.kept.join(', ') + '.' : '';
+        out.innerHTML = (data.trial ? 'Δοκιμή: ' : 'Μοντέλο: ')
+            + '<b>' + whatIfPct(data.p) + '</b> · EV <b>' + whatIfEv(data.ev) + '</b> · '
+            + whatIfNum(data.stake, 2) + ' EUR · proj ' + whatIfNum(data.mean, 1)
+            + kept;
+        applyWhatIf(box, data);
+    } catch (e) {
+        out.textContent = 'Δεν συνδέθηκε ο server.';
+    }
+}
+function applyWhatIf(box, data) {
+    const card = box.closest('.card');
+    if (card) {
+        const p = card.querySelector('.whatif-p');
+        if (p) p.textContent = whatIfPct(data.p);
+        const ev = card.querySelector('.whatif-ev');
+        if (ev) ev.textContent = whatIfEv(data.ev);
+        const stake = card.querySelector('.whatif-stake');
+        if (stake) stake.value = whatIfNum(data.stake, 2);
+        const prob = card.querySelector('.whatif-prob');
+        if (prob) prob.value = data.p;
+        const why = card.querySelector('.whatif-why');
+        if (why && data.explanation) why.textContent = data.explanation;
+        const mins = card.querySelector('.whatif-mins');
+        if (mins && data.minutes != null) mins.textContent = '~' + Math.round(data.minutes) + ' min';
+        const usg = card.querySelector('.whatif-usage');
+        if (usg && data.usage != null) usg.textContent = whatIfNum(data.usage, 1) + '%';
+        const bar = card.querySelector('.meter .fin');
+        if (bar) bar.style.width = Math.round(data.p * 100) + '%';
+    }
+    const row = box.closest('tr.whatif-row');
+    if (row) {
+        const main = row.previousElementSibling;
+        if (main) {
+            if (main.querySelector('[data-col=proj]') && data.mean != null)
+                main.querySelector('[data-col=proj]').textContent = whatIfNum(data.mean, 1);
+            if (main.querySelector('[data-col=usage]') && data.usage != null)
+                main.querySelector('[data-col=usage]').textContent = Math.round(data.usage) + '%';
+            const pb = main.querySelector('[data-col=p] b');
+            if (pb) pb.textContent = whatIfPct(data.p);
+            const bar = main.querySelector('[data-col=p] .ubar div');
+            if (bar) bar.style.width = Math.round(data.p * 100) + '%';
+            if (main.querySelector('[data-col=fair]') && data.p)
+                main.querySelector('[data-col=fair]').textContent = (1 / data.p).toFixed(2);
+            const ev = main.querySelector('[data-col=ev]');
+            if (ev) {
+                ev.textContent = (data.ev * 100).toFixed(1) + '%';
+                ev.classList.toggle('pos', data.ev > 0);
+                ev.classList.toggle('neg', data.ev <= 0);
+            }
+            if (main.querySelector('[data-col=stake]'))
+                main.querySelector('[data-col=stake]').textContent = data.stake > 0 ? Math.round(data.stake) : '-';
+        }
+    }
+}
+document.addEventListener('click', ev => {
+    const run = ev.target.closest('.whatif-run');
+    if (run) {
+        ev.preventDefault();
+        runWhatIf(run.closest('.whatif'));
+    }
+    const reset = ev.target.closest('.whatif-reset');
+    if (reset) {
+        ev.preventDefault();
+        const box = reset.closest('.whatif');
+        box.querySelectorAll('input').forEach(i => i.value = '');
+        runWhatIf(box);
+    }
+});
+        </script>
 </body>
 </html>

@@ -29,6 +29,7 @@
         <input type="hidden" name="date" th:value="${date}">
         <input type="hidden" name="back" value="dashboard">
         <button type="submit" th:disabled="${providers == 0}">Fetch latest odds from bookmakers</button>
+        <span class="muted">One Fetch per day. Superbet.gr NBA props load automatically. If a bookmaker is blocked, the others still run; you can also paste lines in Odds &amp; context.</span>
         <span class="muted" th:if="${lastFetch != null}" th:text="'Last odds update: ' + ${lastFetch.replace('T', ' ').substring(0, 16)} + ' UTC'"></span>
         <span class="muted" th:if="${lastFetch == null}">No odds for this date yet. Bookmakers publish player props only a few hours before tip-off.</span>
     </form>
@@ -48,6 +49,51 @@
         <th:block th:each="v, it : ${top}"><div th:replace="~{fragments :: pickCard(${v}, ${it.count}, ${date}, ${moves})}"></div></th:block>
     </div>
 
+    <h2 th:if="${hotOver != null and !hotOver.isEmpty()}">On fire OVER</h2>
+    <p class="muted" th:if="${hotOver != null and !hotOver.isEmpty()}">Παίκτες που έχουν πιάσει το OVER αυτού του line τουλάχιστον 3 συνεχόμενα ματς (DNP δεν κόβει το σερί).</p>
+    <table th:if="${hotOver != null and !hotOver.isEmpty()}">
+        <tr><th>Player</th><th>Pick</th><th>Σερί</th><th>Odds</th><th>Probability</th><th>EV</th></tr>
+        <tr th:each="v : ${hotOver}">
+            <td th:text="${v.odds.playerName}"></td>
+            <td th:text="${v.side} + ' ' + ${v.line} + ' ' + ${v.odds.stat.label}"></td>
+            <td><span class="tag fire" th:text="${v.fireLabel()}"></span></td>
+            <td th:text="${#numbers.formatDecimal(v.bookOdds, 1, 2)}"></td>
+            <td th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></td>
+            <td th:classappend="${v.ev > 0} ? 'pos' : 'neg'" th:text="${#numbers.formatDecimal(v.ev * 100, 1, 1)} + '%'"></td>
+        </tr>
+    </table>
+
+    <h2 th:if="${hotUnder != null and !hotUnder.isEmpty()}">On fire UNDER</h2>
+    <p class="muted" th:if="${hotUnder != null and !hotUnder.isEmpty()}">Παίκτες που έχουν μείνει κάτω από αυτό το line τουλάχιστον 3 συνεχόμενα ματς (DNP δεν κόβει το σερί).</p>
+    <table th:if="${hotUnder != null and !hotUnder.isEmpty()}">
+        <tr><th>Player</th><th>Pick</th><th>Σερί</th><th>Odds</th><th>Probability</th><th>EV</th></tr>
+        <tr th:each="v : ${hotUnder}">
+            <td th:text="${v.odds.playerName}"></td>
+            <td th:text="${v.side} + ' ' + ${v.line} + ' ' + ${v.odds.stat.label}"></td>
+            <td><span class="tag fire" th:text="${v.fireLabel()}"></span></td>
+            <td th:text="${#numbers.formatDecimal(v.bookOdds, 1, 2)}"></td>
+            <td th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></td>
+            <td th:classappend="${v.ev > 0} ? 'pos' : 'neg'" th:text="${#numbers.formatDecimal(v.ev * 100, 1, 1)} + '%'"></td>
+        </tr>
+    </table>
+
+    <h2 th:if="${unders != null and !unders.isEmpty()}">Μεγαλύτερο value UNDER</h2>
+    <p class="muted" th:if="${unders != null and !unders.isEmpty()}">Τα μεγαλύτερα θετικά EV στο under. Το ποσοστό είναι 1 − P(over) μετά από shrink/calibration — τα 55/45 δεν αλλάζουν.</p>
+    <table th:if="${unders != null and !unders.isEmpty()}">
+        <tr><th>Player</th><th>Pick</th><th>On fire</th><th>Odds</th><th>Book</th><th>Probability</th><th>Fair odds</th><th>EV</th><th>Stake</th></tr>
+        <tr th:each="v : ${unders}">
+            <td th:text="${v.odds.playerName}"></td>
+            <td th:text="${v.side} + ' ' + ${v.line} + ' ' + ${v.odds.stat.label}"></td>
+            <td><span th:if="${v.onFire}" class="tag fire" th:text="${v.fireLabel()}"></span><span th:unless="${v.onFire}" class="muted">—</span></td>
+            <td th:text="${#numbers.formatDecimal(v.bookOdds, 1, 2)}"></td>
+            <td th:text="${v.odds.bookmaker}"></td>
+            <td class="prob" th:classappend="${v.pFinal >= 0.6} ? 'hi' : (${v.pFinal >= 0.45} ? 'mid' : 'lo')" th:title="'Model probability this pick wins. Break-even at these odds: ' + ${#numbers.formatDecimal(100 / v.bookOdds, 1, 0)} + '%'"><b th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b><div class="ubar"><div th:style="'width:' + ${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></div></div></td>
+            <td th:text="${#numbers.formatDecimal(1 / v.pFinal, 1, 2)}" title="Odds at which this pick would break even by our model"></td>
+            <td class="pos" th:text="'+' + ${#numbers.formatDecimal(v.ev * 100, 1, 0)} + '%'"></td>
+            <td th:text="${#numbers.formatDecimal(v.stake, 1, 0)} + ' EUR'"></td>
+        </tr>
+    </table>
+
     <h2 th:if="${edges != null and !edges.isEmpty()}">Biggest edges (possible bookmaker errors)</h2>
     <p class="muted" th:if="${edges != null and !edges.isEmpty()}">EV of 15% or more. Big gaps are either mispriced lines or something
         the model cannot see (injury, minutes limit, rest) - check news before betting these.</p>
@@ -66,28 +112,61 @@
         </tr>
     </table>
 
+    <div th:replace="~{fragments :: levels(${levels})}"></div>
+
     <h2>All candidates</h2>
     <div class="row filters" th:if="${all != null and !all.isEmpty()}">
         <input type="search" id="q" placeholder="Filter by player, team, stat..." oninput="applyFilter()">
         <label><input type="checkbox" id="onlyValue" checked onchange="applyFilter()"> only positive EV</label>
+        <label>Ποσοστό <input type="number" id="pMin" min="0" max="100" step="1" placeholder="από" style="width:58px" oninput="applyFilter()">–
+            <input type="number" id="pMax" min="0" max="100" step="1" placeholder="έως" style="width:58px" oninput="applyFilter()">%</label>
+        <label>Απόδοση <input type="number" id="oddsMin" min="1" step="0.01" placeholder="από" style="width:64px" oninput="applyFilter()">–
+            <input type="number" id="oddsMax" min="1" step="0.01" placeholder="έως" style="width:64px" oninput="applyFilter()"></label>
+        <span class="chips">
+            <button type="button" class="chip" onclick="preset(20,70,null,null)">20–70%</button>
+            <button type="button" class="chip" onclick="preset(30,60,null,null)">30–60%</button>
+            <button type="button" class="chip" onclick="preset(50,70,null,null)">50–70%</button>
+            <button type="button" class="chip" onclick="preset(null,null,1.40,2.00)">1.40–2.00</button>
+            <button type="button" class="chip" onclick="preset(null,null,2.00,3.00)">2.00–3.00</button>
+            <button type="button" class="chip" onclick="preset(null,null,null,null); setFire(''); setSide('')">όλα</button>
+            <button type="button" class="chip" onclick="setFire('OVER')">on fire OVER</button>
+            <button type="button" class="chip" onclick="setFire('UNDER')">on fire UNDER</button>
+            <button type="button" class="chip" onclick="setSide('UNDER')">μόνο under</button>
+            <button type="button" class="chip" onclick="setSide('OVER')">μόνο over</button>
+            <button type="button" class="chip" th:if="${levels != null and levels.best != null}"
+                    th:attr="onclick=|preset(${#numbers.formatDecimal(levels.best.pLo * 100, 1, 0)}, ${#numbers.formatDecimal(levels.best.pHi > 1 ? 100 : levels.best.pHi * 100, 1, 0)}, ${#numbers.formatDecimal(levels.best.oLo, 1, 2)}, ${#numbers.formatDecimal(levels.best.oHi >= 50 ? 4 : levels.best.oHi, 1, 2)})|"
+                    th:text="'καλύτερος: ' + ${levels.best.pLabel} + ' × ' + ${levels.best.oLabel}"></button>
+        </span>
         <span class="muted" id="count"></span>
     </div>
     <table id="cands" th:if="${all != null and !all.isEmpty()}">
-        <tr><th>Player</th><th>Game</th><th>Pick</th><th>Odds</th><th>Book</th><th>Projection</th><th>Usage</th><th>Market</th><th>Probability</th><th>Fair odds</th><th>EV</th><th>Stake</th></tr>
-        <tr th:each="v : ${all}" th:attr="data-ev=${v.ev}">
+        <tr><th>Player</th><th>Game</th><th>Pick</th><th>On fire</th><th>Odds</th><th>Book</th><th>Projection</th><th>Usage</th><th>Market</th><th>Probability</th><th>Fair odds</th><th>EV</th><th>Stake</th><th>Ιστορικό επιπέδου</th></tr>
+        <th:block th:each="v : ${all}">
+        <tr th:attr="data-ev=${v.ev}, data-p=${v.pFinal * 100}, data-odds=${v.bookOdds}, data-fire=${v.fireStreak}, data-side=${v.side}">
             <td th:text="${v.odds.playerName}"></td>
             <td th:text="${v.prediction.team} + (${v.prediction.home} ? ' vs ' : ' @ ') + ${v.prediction.opp}"></td>
             <td th:text="${v.side} + ' ' + ${v.line} + ' ' + ${v.odds.stat.label}"></td>
+            <td><span th:if="${v.onFire}" class="tag fire" th:text="${v.fireLabel()}"></span><span th:unless="${v.onFire}" class="muted">—</span></td>
             <td th:text="${#numbers.formatDecimal(v.bookOdds, 1, 2)}"></td>
             <td th:text="${v.odds.bookmaker}"></td>
-            <td th:text="${#numbers.formatDecimal(v.prediction.mean, 1, 1)}"></td>
-            <td th:text="${#numbers.formatDecimal(v.prediction.usage, 1, 0)} + '%'"></td>
+            <td data-col="proj" th:text="${#numbers.formatDecimal(v.prediction.mean, 1, 1)}"></td>
+            <td data-col="usage" th:text="${#numbers.formatDecimal(v.prediction.usage, 1, 0)} + '%'"></td>
             <td th:text="${#numbers.formatDecimal(v.pFair * 100, 1, 0)} + '%'"></td>
-            <td class="prob" th:classappend="${v.pFinal >= 0.6} ? 'hi' : (${v.pFinal >= 0.45} ? 'mid' : 'lo')" th:title="'Model probability this pick wins. Break-even at these odds: ' + ${#numbers.formatDecimal(100 / v.bookOdds, 1, 0)} + '%'"><b th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b><div class="ubar"><div th:style="'width:' + ${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></div></div></td>
-<td th:text="${#numbers.formatDecimal(1 / v.pFinal, 1, 2)}" title="Odds at which this pick would break even by our model"></td>
-            <td th:classappend="${v.ev > 0} ? 'pos' : 'neg'" th:text="${#numbers.formatDecimal(v.ev * 100, 1, 1)} + '%'"></td>
-            <td th:text="${v.stake > 0} ? ${#numbers.formatDecimal(v.stake, 1, 0)} : '-'"></td>
+            <td data-col="p" class="prob" th:classappend="${v.pFinal >= 0.6} ? 'hi' : (${v.pFinal >= 0.45} ? 'mid' : 'lo')" th:title="'Model probability this pick wins. Break-even at these odds: ' + ${#numbers.formatDecimal(100 / v.bookOdds, 1, 0)} + '%'"><b th:text="${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></b><div class="ubar"><div th:style="'width:' + ${#numbers.formatDecimal(v.pFinal * 100, 1, 0)} + '%'"></div></div></td>
+<td data-col="fair" th:text="${#numbers.formatDecimal(1 / v.pFinal, 1, 2)}" title="Odds at which this pick would break even by our model"></td>
+            <td data-col="ev" th:classappend="${v.ev > 0} ? 'pos' : 'neg'" th:text="${#numbers.formatDecimal(v.ev * 100, 1, 1)} + '%'"></td>
+            <td data-col="stake" th:text="${v.stake > 0} ? ${#numbers.formatDecimal(v.stake, 1, 0)} : '-'"></td>
+            <td class="muted small" th:text="${levels != null} ? ${levels.badge(v.pFinal, v.bookOdds)} : ''"></td>
         </tr>
+        <tr class="whatif-row" th:if="${v.fermabets}" th:attr="data-ev=${v.ev}, data-p=${v.pFinal * 100}, data-odds=${v.bookOdds}">
+            <td colspan="14">
+                <details>
+                    <summary>Δοκίμασε δικές σου προβλέψεις — κενό πεδίο = τιμή μοντέλου</summary>
+                    <div th:replace="~{fragments :: whatIf(${v})}"></div>
+                </details>
+            </td>
+        </tr>
+        </th:block>
     </table>
 
     <h2>Games on this date</h2>
@@ -97,18 +176,58 @@
     </div>
 </main>
 <script>
+function num(id) {
+    const el = document.getElementById(id);
+    if (!el || el.value.trim() === '') return null;
+    const v = parseFloat(el.value.replace(',', '.'));
+    return Number.isFinite(v) ? v : null;
+}
+function preset(pMin, pMax, oMin, oMax) {
+    document.getElementById('pMin').value = pMin == null ? '' : pMin;
+    document.getElementById('pMax').value = pMax == null ? '' : pMax;
+    document.getElementById('oddsMin').value = oMin == null ? '' : oMin;
+    document.getElementById('oddsMax').value = oMax == null ? '' : oMax;
+    applyFilter();
+}
+function setFire(side) {
+    const t = document.getElementById('cands');
+    const s = (side || '').toUpperCase();
+    t.dataset.fireOnly = s ? '1' : '';
+    if (s) t.dataset.side = s;
+    applyFilter();
+}
+function setSide(side) {
+    const t = document.getElementById('cands');
+    t.dataset.side = side || '';
+    t.dataset.fireOnly = '';
+    applyFilter();
+}
 function applyFilter() {
     const q = document.getElementById('q').value.toLowerCase();
     const onlyValue = document.getElementById('onlyValue').checked;
+    const fireOnly = document.getElementById('cands').dataset.fireOnly === '1';
+    const sideOnly = (document.getElementById('cands').dataset.side || '').toUpperCase();
+    const pMin = num('pMin'), pMax = num('pMax'), oMin = num('oddsMin'), oMax = num('oddsMax');
     let shown = 0;
-    document.querySelectorAll('#cands tr[data-ev]').forEach(r => {
-        const ok = r.textContent.toLowerCase().includes(q) && (!onlyValue || parseFloat(r.dataset.ev) > 0);
+    document.querySelectorAll('#cands tr[data-ev]:not(.whatif-row)').forEach(r => {
+        const p = parseFloat(r.dataset.p);
+        const odds = parseFloat(r.dataset.odds);
+        let ok = r.textContent.toLowerCase().includes(q) && (!onlyValue || parseFloat(r.dataset.ev) > 0);
+        if (fireOnly && !(parseInt(r.dataset.fire || '0', 10) >= 3)) ok = false;
+        if (sideOnly && (r.dataset.side || '').toUpperCase() !== sideOnly) ok = false;
+        if (pMin != null && !(p >= pMin)) ok = false;
+        if (pMax != null && !(p <= pMax)) ok = false;
+        if (oMin != null && !(odds >= oMin)) ok = false;
+        if (oMax != null && !(odds <= oMax)) ok = false;
         r.style.display = ok ? '' : 'none';
+        const next = r.nextElementSibling;
+        if (next && next.classList.contains('whatif-row')) next.style.display = ok ? '' : 'none';
         shown += ok ? 1 : 0;
     });
     document.getElementById('count').textContent = shown + ' shown';
 }
 if (document.getElementById('cands')) applyFilter();
 </script>
+<script th:replace="~{fragments :: whatifJs}"></script>
 </body>
 </html>

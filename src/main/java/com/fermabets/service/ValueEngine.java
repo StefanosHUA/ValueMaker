@@ -5,6 +5,11 @@ import com.fermabets.domain.Stat;
 import com.fermabets.model.FermabetsModel;
 import com.fermabets.model.FermabetsModel.Estimate;
 import com.fermabets.model.LeagueData;
+import com.fermabets.model.Last5Form;
+import com.fermabets.model.BackToBackAdjuster;
+import com.fermabets.model.BlowoutAdjuster;
+import com.fermabets.model.LineStreak;
+import com.fermabets.model.LineupAdjuster;
 import com.fermabets.model.ProjectionBuilder;
 import com.fermabets.model.ProjectionBuilder.Projection;
 import com.fermabets.service.ModelService.Prediction;
@@ -19,6 +24,8 @@ import java.util.concurrent.ConcurrentHashMap;
 @Service
 public class ValueEngine {
     static final int MIN_GAMES = 15;
+    /** Below this many current-season games, final p is pulled toward 50% (Bühlmann prior). 55/45 stays put. */
+    static final int YOUNG_SEASON = 8;
     static final double MIN_PROJ_MINUTES = 12.0;
     static final double MIN_ODDS = 1.40;
     static final double MAX_ODDS = 4.00;
@@ -29,15 +36,45 @@ public class ValueEngine {
 
     public record ValueBet(OddsRow odds, String side, double line, double bookOdds, double pModel, double pFair,
                            double pFinal, double ev, double stake, double score, boolean suspicious,
-                           PickInfo prediction, String explanation, List<String> warnings) {
+                           PickInfo prediction, String explanation, List<String> warnings, int fireStreak) {
+        public ValueBet(OddsRow odds, String side, double line, double bookOdds, double pModel, double pFair,
+                        double pFinal, double ev, double stake, double score, boolean suspicious,
+                        PickInfo prediction, String explanation, List<String> warnings) {
+            this(odds, side, line, bookOdds, pModel, pFair, pFinal, ev, stake, score, suspicious, prediction,
+                    explanation, warnings, 0);
+        }
+
         public boolean fermabets() {
             return prediction instanceof FermabetsPick;
+        }
+
+        public Projection nbaProjection() {
+            return prediction instanceof FermabetsPick f ? f.projection() : null;
+        }
+
+        public boolean onFire() {
+            return LineStreak.hot(fireStreak);
+        }
+
+        public String fireLabel() {
+            return LineStreak.label(fireStreak, side, line);
+        }
+    }
+
+    /** User numbers for a trial reprice. Null = keep the model's calculated value for that field. */
+    public record Override(Double minutes, Double usage, Double fga, Double fta, Double fg3a, Double pace) {
+        public static final Override NONE = new Override(null, null, null, null, null, null);
+
+        public boolean any() {
+            return minutes != null || usage != null || fga != null || fta != null || fg3a != null || pace != null;
         }
     }
 
     /** Player context shared by all of his lines on the day. */
     private record NbaContext(String team, String opp, boolean home, List<GameRow> history, double[] usage,
-                              double[] pace, Projection projection, List<String> warnings) {
+                              double[] pace, Projection projection, List<String> warnings, List<String> lineupNotes,
+                              List<LineupAdjuster.Condition> roster, double[] rosterMatch, LocalDate seasonStart,
+                              double blowoutHcap, double[] blowoutMatch, double[] b2bMatch) {
     }
 
     private final OddsService oddsService;
@@ -49,9 +86,17 @@ public class ValueEngine {
 
     private volatile double calibration = 0.0;
 
-    /** Probability shift learned from settled bets (negative when the model has been overconfident). */
+    /** Probability shift learned from settled picks (negative when the model has been overconfident). */
     public void setCalibration(double shift) {
         this.calibration = shift;
+    }
+
+    public double calibration() {
+        return calibration;
+    }
+
+    double applyCalibration(double p) {
+        return Math.max(0.01, Math.min(0.99, p + calibration));
     }
 
     public ValueEngine(OddsService oddsService, ModelService models, SettingsService settings, DataRepository repo,
@@ -68,16 +113,18 @@ public class ValueEngine {
         return skipped.getOrDefault(date, List.of());
     }
 
-    /** All positive-EV candidates for the day, best first, one per player+stat (best price/line shopping). */
+    /** Candidates for the day, best first. Shops the best line per player+stat+side (OVER and UNDER both kept). */
     public List<ValueBet> evaluate(LocalDate date) {
         Map<String, Optional<Prediction>> cache = new HashMap<>();
         Map<String, Optional<NbaContext>> nbaCache = new HashMap<>();
+        Map<String, Double> handicaps = repo.homeHandicaps(FERMABETS_LEAGUE);
         Set<String> skippedNow = new TreeSet<>();
         Map<String, ValueBet> best = new HashMap<>();
         for (OddsRow row : oddsService.forDate(date)) {
-            String key = row.playerId() + "|" + row.stat();
+            String playerStat = row.playerId() + "|" + row.stat();
             if (FERMABETS_LEAGUE.equals(row.league())) {
-                Optional<NbaContext> ctx = nbaCache.computeIfAbsent(row.playerId(), k -> nbaContext(row, date));
+                Optional<NbaContext> ctx = nbaCache.computeIfAbsent(row.playerId(),
+                        k -> nbaContext(row, date, handicaps));
                 if (ctx.isEmpty()) {
                     continue;
                 }
@@ -86,15 +133,14 @@ public class ValueEngine {
                             row.playerName(), ctx.get().projection().games(), ProjectionBuilder.MIN_SEASON_GAMES));
                     continue;
                 }
-                ValueBet bet = priceNba(row, ctx.get());
-                if (bet != null) {
-                    best.merge(key, bet, (a, b) -> a.score() >= b.score() ? a : b);
+                for (ValueBet bet : priceNbaSides(row, ctx.get())) {
+                    best.merge(playerStat + "|" + bet.side(), bet, (a, b) -> a.score() >= b.score() ? a : b);
                 }
                 continue;
             }
             Optional<Prediction> pred;
             try {
-                pred = cache.computeIfAbsent(key,
+                pred = cache.computeIfAbsent(playerStat,
                         k -> models.predict(row.league(), row.playerId(), row.playerName(), row.stat(), date));
             } catch (IllegalStateException e) {
                 continue;
@@ -109,11 +155,28 @@ public class ValueEngine {
                 if (bet == null) {
                     continue;
                 }
-                best.merge(key, bet, (a, b) -> a.score() >= b.score() ? a : b);
+                best.merge(playerStat + "|" + side, bet, (a, b) -> a.score() >= b.score() ? a : b);
             }
         }
         skipped.put(date, List.copyOf(skippedNow));
         return best.values().stream().sorted(Comparator.comparingDouble(ValueBet::score).reversed()).toList();
+    }
+
+    /** Reprice one NBA line with optional user centres; empty fields stay on the model's projection. */
+    public Optional<ValueBet> whatIf(long oddsId, Override override) {
+        return whatIf(oddsId, override, "OVER");
+    }
+
+    public Optional<ValueBet> whatIf(long oddsId, Override override, String side) {
+        Optional<OddsRow> row = oddsService.byId(oddsId);
+        if (row.isEmpty() || !FERMABETS_LEAGUE.equals(row.get().league())) {
+            return Optional.empty();
+        }
+        OddsRow r = row.get();
+        String s = "UNDER".equalsIgnoreCase(side) ? "UNDER" : "OVER";
+        return nbaContext(r, r.date(), repo.homeHandicaps(FERMABETS_LEAGUE))
+                .map(c -> priceNba(r, c, override == null ? Override.NONE : override, s))
+                .filter(Objects::nonNull);
     }
 
     /** Candidates for one fixture only. */
@@ -143,7 +206,7 @@ public class ValueEngine {
         return out;
     }
 
-    private Optional<NbaContext> nbaContext(OddsRow row, LocalDate date) {
+    private Optional<NbaContext> nbaContext(OddsRow row, LocalDate date, Map<String, Double> handicaps) {
         LeagueData d = models.data(FERMABETS_LEAGUE);
         List<GameRow> history = d.history(row.playerId()).stream().filter(r -> r.date().isBefore(date)).toList();
         if (history.isEmpty()) {
@@ -171,15 +234,108 @@ public class ValueEngine {
                 seasonUsage.add(usage[i]);
             }
         }
+        double last5W = models.last5Weight(FERMABETS_LEAGUE, date);
         Projection proj = ProjectionBuilder.build(season,
                 seasonUsage.stream().mapToDouble(Double::doubleValue).toArray(),
-                d.seasonPace(team, seasonStart, date), d.seasonPace(opp, seasonStart, date));
+                d.seasonPace(team, seasonStart, date), d.seasonPace(opp, seasonStart, date),
+                Last5Form.mix(season.size(), last5W));
+        Lineup lineup = tonightLineup(d, team, date);
+        List<LineupAdjuster.Condition> roster = LineupAdjuster.conditions(d, row.playerId(), team, date, seasonStart,
+                lineup.out(), lineup.back(), lineup.names());
+        LineupAdjuster.Adjustment adj = LineupAdjuster.apply(proj, d, row.playerId(), team, date, seasonStart,
+                lineup.out(), lineup.back(), lineup.names());
+        proj = adj.projection();
+        double hcap = tonightHcap(d, date, team, opp, home);
+        BlowoutAdjuster.Adjustment blow = BlowoutAdjuster.apply(proj, d, row.playerId(), team, date, seasonStart,
+                hcap, null, handicaps);
+        proj = blow.projection();
+        BackToBackAdjuster.Adjustment b2b = BackToBackAdjuster.apply(proj, d, row.playerId(), team, date, seasonStart);
+        proj = b2b.projection();
+        double[] rosterMatch = new double[history.size()];
+        double[] blowoutMatch = new double[history.size()];
+        double[] b2bMatch = new double[history.size()];
+        for (int i = 0; i < history.size(); i++) {
+            rosterMatch[i] = LineupAdjuster.matchScore(d, team, history.get(i).gameId(), roster);
+            blowoutMatch[i] = BlowoutAdjuster.matchScore(d, history.get(i), hcap, null, handicaps);
+            b2bMatch[i] = BackToBackAdjuster.matchScore(history, history.get(i), date);
+        }
         List<String> warnings = new ArrayList<>(warningService.forPlayer(FERMABETS_LEAGUE, date, row.playerId(),
                 row.playerName(), team, opp, home));
         if (!proj.ready()) {
             warnings.add(0, String.format("Λίγοι φετινοί αγώνες (%d), δεν βγαίνει πρόταση.", proj.games()));
         }
-        return Optional.of(new NbaContext(team, opp, home, history, usage, pace, proj, warnings));
+        List<String> notes = new ArrayList<>(adj.notes());
+        notes.addAll(blow.notes());
+        notes.addAll(b2b.notes());
+        if (season.size() > Last5Form.GAMES) {
+            notes.add(0, String.format(Locale.US, "μίγμα last-5 %.0f%% / σεζόν %.0f%%", last5W * 100,
+                    (1 - last5W) * 100));
+        }
+        return Optional.of(new NbaContext(team, opp, home, history, usage, pace, proj, warnings, notes, roster,
+                rosterMatch, seasonStart, hcap, blowoutMatch, b2bMatch));
+    }
+
+    /** Warning convention: negative = favourite. Book spread, then game line, then our own rating. */
+    double tonightHcap(LeagueData d, LocalDate date, String team, String opp, boolean home) {
+        String homeTeam = home ? team : opp;
+        String awayTeam = home ? opp : team;
+        Optional<DataRepository.Spread> sp = repo.spread(FERMABETS_LEAGUE, date, homeTeam, awayTeam);
+        if (sp.isPresent()) {
+            return sp.get().forTeam(team);
+        }
+        Optional<DataRepository.GameMarket> gm = repo.gameMarket(FERMABETS_LEAGUE, date, homeTeam, awayTeam);
+        if (gm.isPresent()) {
+            return home ? -gm.get().margin() : gm.get().margin();
+        }
+        return -d.expectedMargin(team, opp, date, home);
+    }
+
+    private record Lineup(Set<String> out, Set<String> back, Map<String, String> names) {
+    }
+
+    private Lineup tonightLineup(LeagueData d, String team, LocalDate date) {
+        Set<String> out = new HashSet<>();
+        Set<String> back = new HashSet<>();
+        Map<String, String> names = new HashMap<>();
+        List<DataRepository.Player> roster = repo.players(FERMABETS_LEAGUE);
+        for (DataRepository.Player p : roster) {
+            names.put(p.id(), p.name());
+        }
+        Set<String> uncertain = new HashSet<>();
+        if (repo.hasInjuryData(FERMABETS_LEAGUE, date)) {
+            for (DataRepository.Injury inj : repo.injuries(FERMABETS_LEAGUE, date, team)) {
+                DataRepository.Player match = matchInjury(roster, inj);
+                if (match == null) {
+                    continue;
+                }
+                names.put(match.id(), inj.name());
+                String st = inj.status() == null ? "" : inj.status();
+                if (st.equals("Out") || st.equals("OFS") || st.equals("Doubt") || st.equalsIgnoreCase("Doubtful")) {
+                    out.add(match.id());
+                    if (st.equals("Doubt") || st.equalsIgnoreCase("Doubtful")) {
+                        names.put(match.id(), inj.name() + " (doubtful)");
+                    }
+                } else if (st.equals("Ques") || st.equals("GTD")) {
+                    uncertain.add(match.id());
+                } else if (inj.starter() || st.equals("Prob") || st.isBlank()) {
+                    back.add(match.id());
+                }
+            }
+        }
+        out.addAll(repo.absentees(date));
+        back.addAll(d.rotation(team, date).keySet());
+        back.removeAll(out);
+        back.removeAll(uncertain);
+        return new Lineup(out, back, names);
+    }
+
+    static DataRepository.Player matchInjury(List<DataRepository.Player> players, DataRepository.Injury inj) {
+        for (DataRepository.Player p : players) {
+            if (p.key().equals(inj.key())) {
+                return p;
+            }
+        }
+        return PlayerMatcher.match(players, inj.name());
     }
 
     static String canonical(Stat stat) {
@@ -192,14 +348,31 @@ public class ValueEngine {
         };
     }
 
-    private ValueBet priceNba(OddsRow row, NbaContext c) {
-        Double odds = row.over();
-        if (odds == null || odds <= 1.0) {
+    private List<ValueBet> priceNbaSides(OddsRow row, NbaContext c) {
+        List<ValueBet> out = new ArrayList<>();
+        ValueBet over = priceNba(row, c, Override.NONE, "OVER");
+        ValueBet under = priceNba(row, c, Override.NONE, "UNDER");
+        if (over != null) {
+            out.add(over);
+        }
+        if (under != null) {
+            out.add(under);
+        }
+        return out;
+    }
+
+    private ValueBet priceNba(OddsRow row, NbaContext c, Override override, String side) {
+        boolean wantOver = !"UNDER".equalsIgnoreCase(side);
+        Double odds = wantOver ? row.over() : row.under();
+        if (odds == null || odds < MIN_ODDS || odds > MAX_ODDS) {
             return null;
         }
-        Projection p = c.projection();
-        FermabetsModel.Inputs in = new FermabetsModel.Inputs(canonical(row.stat()), row.line(), p.minsBand(),
-                p.fgaBand(), p.ftaBand(), p.usgBand(), p.paceBand(), p.fg3aBand(), c.home(), c.opp());
+        Projection base = c.projection();
+        Override o = override == null ? Override.NONE : override;
+        Projection proj = ProjectionBuilder.override(base, o.minutes(), o.usage(), o.fga(), o.fta(), o.fg3a(),
+                o.pace());
+        FermabetsModel.Inputs in = new FermabetsModel.Inputs(canonical(row.stat()), row.line(), proj.minsBand(),
+                proj.fgaBand(), proj.ftaBand(), proj.usgBand(), proj.paceBand(), proj.fg3aBand(), c.home(), c.opp());
         List<FermabetsModel.Game> games = new ArrayList<>();
         double statSum = 0, minSum = 0;
         for (int i = 0; i < c.history().size(); i++) {
@@ -207,32 +380,123 @@ public class ValueEngine {
             games.add(new FermabetsModel.Game(row.stat().of(r), r.minutes(), r.v()[GameRow.FGA], r.v()[GameRow.FTA],
                     r.v()[GameRow.FG3A], c.usage()[i], c.pace()[i], r.home(), r.opp()));
         }
-        int from = Math.max(0, c.history().size() - p.games());
+        int from = Math.max(0, c.history().size() - proj.games());
         for (int i = from; i < c.history().size(); i++) {
             statSum += row.stat().of(c.history().get(i));
             minSum += c.history().get(i).minutes();
         }
-        double mean = minSum > 0 ? statSum / minSum * p.minutes() : Double.NaN;
+        double mean = minSum > 0 ? statSum / minSum * proj.minutes() : Double.NaN;
+        double[] weights = null;
+        int nMatch = 0, matchHits = 0, nBlow = 0, blowHits = 0, nB2b = 0, b2bHits = 0;
+        boolean hasRoster = c.roster() != null && !c.roster().isEmpty();
+        boolean hasBlow = c.blowoutMatch() != null && WarningService.isBlowout(c.blowoutHcap());
+        boolean hasB2b = c.b2bMatch() != null && java.util.Arrays.stream(c.b2bMatch()).anyMatch(x -> x >= 1.0 - 1e-9);
+        if (hasRoster || hasBlow || hasB2b) {
+            weights = new double[c.history().size()];
+            for (int i = 0; i < weights.length; i++) {
+                boolean thisSeason = !c.history().get(i).date().isBefore(c.seasonStart());
+                double roster = hasRoster && thisSeason ? c.rosterMatch()[i] : 0;
+                double blow = hasBlow ? c.blowoutMatch()[i] : 0;
+                double b2bW = hasB2b ? c.b2bMatch()[i] : 0;
+                weights[i] = 1.0 + LineupAdjuster.ROSTER_BOOST * roster + BlowoutAdjuster.MATCH_BOOST * blow
+                        + BackToBackAdjuster.MATCH_BOOST * b2bW;
+                if (roster >= 1.0 - 1e-9) {
+                    nMatch++;
+                    if (row.stat().of(c.history().get(i)) > row.line()) {
+                        matchHits++;
+                    }
+                }
+                if (blow >= 1.0 - 1e-9) {
+                    nBlow++;
+                    if (row.stat().of(c.history().get(i)) > row.line()) {
+                        blowHits++;
+                    }
+                }
+                if (b2bW >= 1.0 - 1e-9) {
+                    nB2b++;
+                    if (row.stat().of(c.history().get(i)) > row.line()) {
+                        b2bHits++;
+                    }
+                }
+            }
+        }
         FermabetsModel.Result res;
         try {
-            res = FermabetsModel.evaluate(games, in);
+            res = FermabetsModel.evaluate(games, in, weights);
         } catch (IllegalArgumentException e) {
             return null;
         }
-        FermabetsModel.Stake plan = FermabetsModel.stake(res.prob(), odds, settings.bankroll());
-        Double under = row.under();
-        double pFair = under != null ? (1.0 / odds) / (1.0 / odds + 1.0 / under) : (1.0 / odds) * SINGLE_SIDED_MARGIN;
-        FermabetsPick pick = new FermabetsPick(c.team(), c.opp(), c.home(), mean, p, res, plan);
-        return new ValueBet(row, "OVER", row.line(), odds, res.prob(), pFair, res.prob(), plan.ev(), plan.stake(),
-                plan.ev(), false, pick, explainNba(row, pick), c.warnings());
+        double prob = res.prob();
+        List<String> notes = new ArrayList<>(c.lineupNotes());
+        double share = LineupAdjuster.blendShare(nMatch);
+        if (share > 0) {
+            double pRoster = matchHits / (double) nMatch;
+            prob = (1.0 - share) * prob + share * pRoster;
+            String who = c.roster().stream().map(LineupAdjuster.Condition::label).reduce((a, b) -> a + ", " + b)
+                    .orElse("ρόστερ");
+            notes.add(String.format(Locale.US,
+                    "Ίδια σύνθεση (%s): over %.0f%% σε %d αγώνες, βάρος %.0f%% στο p.",
+                    who, pRoster * 100, nMatch, share * 100));
+        }
+        double blowShare = LineupAdjuster.blendShare(nBlow);
+        if (blowShare > 0) {
+            double pBlow = blowHits / (double) nBlow;
+            prob = (1.0 - blowShare) * prob + blowShare * pBlow;
+            notes.add(String.format(Locale.US,
+                    "Ίδια συνθήκη blowout: over %.0f%% σε %d αγώνες, βάρος %.0f%% στο p.",
+                    pBlow * 100, nBlow, blowShare * 100));
+        }
+        double b2bShare = LineupAdjuster.blendShare(nB2b);
+        if (b2bShare > 0) {
+            double pB2b = b2bHits / (double) nB2b;
+            prob = (1.0 - b2bShare) * prob + b2bShare * pB2b;
+            notes.add(String.format(Locale.US,
+                    "Ίδια συνθήκη back-to-back: over %.0f%% σε %d αγώνες, βάρος %.0f%% στο p.",
+                    pB2b * 100, nB2b, b2bShare * 100));
+        }
+        double unshrunk = prob;
+        prob = shrinkYoungSeason(prob, proj.games());
+        if (Math.abs(prob - unshrunk) >= 0.005) {
+            notes.add(String.format(Locale.US,
+                    "Λίγα φετινά δείγματα (%d): p μαζεύτηκε από %.0f%% προς 50%% → %.0f%%.",
+                    proj.games(), unshrunk * 100, prob * 100));
+        }
+        double raw = prob;
+        prob = applyCalibration(prob);
+        if (Math.abs(prob - raw) >= 0.005) {
+            notes.add(String.format(Locale.US, "Εκπαίδευση από αποτελέσματα: p %+.1f pp.", (prob - raw) * 100));
+        }
+        if (o.any()) {
+            notes.add(describeOverride(base, proj, o));
+        }
+        String sideName = wantOver ? "OVER" : "UNDER";
+        double pOver = prob;
+        double pSide = pForSide(pOver, sideName);
+        FermabetsModel.Stake plan = FermabetsModel.stake(pSide, odds, settings.bankroll());
+        Double other = wantOver ? row.under() : row.over();
+        double pFair = other != null ? (1.0 / odds) / (1.0 / odds + 1.0 / other) : (1.0 / odds) * SINGLE_SIDED_MARGIN;
+        FermabetsPick pick = new FermabetsPick(c.team(), c.opp(), c.home(), mean, proj, res, plan);
+        int fire = LineStreak.of(c.history(), row.stat(), row.line(), wantOver);
+        return new ValueBet(row, sideName, row.line(), odds, pSide, pFair, pSide, plan.ev(), plan.stake(),
+                plan.ev(), false, pick, explainNba(row, pick, notes, pSide, sideName), c.warnings(), fire);
     }
 
-    static String explainNba(OddsRow row, FermabetsPick pick) {
+    /** Complementary probability: UNDER is 1 − P(over) after shrink/calibration. */
+    static double pForSide(double pOver, String side) {
+        return "UNDER".equalsIgnoreCase(side) ? 1.0 - pOver : pOver;
+    }
+
+    static String explainNba(OddsRow row, FermabetsPick pick, List<String> lineupNotes) {
+        return explainNba(row, pick, lineupNotes, pick.result().prob(), "OVER");
+    }
+
+    static String explainNba(OddsRow row, FermabetsPick pick, List<String> lineupNotes, double prob, String side) {
         Projection p = pick.projection();
         FermabetsModel.Result r = pick.result();
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format(Locale.US, "Φετινή σεζόν (%d αγώνες): λεπτά %s, usage %s, FGA %s, FTA %s, 3PA %s",
-                p.games(), label(p.minsBand()), label(p.usgBand()), label(p.fgaBand()), label(p.ftaBand()),
+        sb.append(String.format(Locale.US, "Φετινή σεζόν (%d αγώνες%s): λεπτά %s, usage %s, FGA %s, FTA %s, 3PA %s",
+                p.games(), p.games() > ProjectionBuilder.LAST5 ? ", μίγμα + φόρμα 5 αγώνων" : "",
+                label(p.minsBand()), label(p.usgBand()), label(p.fgaBand()), label(p.ftaBand()),
                 label(p.fg3aBand())));
         sb.append(", pace ").append(label(p.paceBand())).append(". ");
         sb.append(pick.home() ? "Εντός με " : "Εκτός με ").append(pick.opp()).append(" (H2H). ");
@@ -242,9 +506,47 @@ public class ValueEngine {
                         f.hitRate() * 100, f.n(), f.effectiveWeight() * 100));
             }
         }
-        sb.append(String.format(Locale.US, "Φίλτρα %s, similarity %s, μοντέλο %.0f%% για over %.1f.",
-                pct(r.pFilters()), pct(r.pSimilarity()), r.prob() * 100, row.line()));
+        if (lineupNotes != null && !lineupNotes.isEmpty()) {
+            sb.append("Σύνθεση: ").append(String.join(" ", lineupNotes)).append(' ');
+        }
+        sb.append(String.format(Locale.US, "Φίλτρα %s, similarity %s, μοντέλο %.0f%% για %s %.1f.",
+                pct(r.pFilters()), pct(r.pSimilarity()), prob * 100, side.toLowerCase(Locale.ROOT), row.line()));
         return sb.toString();
+    }
+
+    /**
+     * The 55/45 hit rates can sit at 100% after 3 matching games because Z only shrinks factor weights, not the
+     * rate toward a prior. Early in the season, pull the blended p toward 50%.
+     */
+    static double shrinkYoungSeason(double p, int games) {
+        if (games >= YOUNG_SEASON) {
+            return p;
+        }
+        double z = FermabetsModel.credibility(Math.max(0, games), FermabetsModel.BUHLMANN_K);
+        return 0.5 + z * (p - 0.5);
+    }
+
+    static String describeOverride(Projection before, Projection after, Override o) {
+        List<String> bits = new ArrayList<>();
+        if (o.minutes() != null) {
+            bits.add(String.format(Locale.US, "λεπτά %.1f (μοντέλο %.1f)", after.minutes(), before.minutes()));
+        }
+        if (o.usage() != null) {
+            bits.add(String.format(Locale.US, "usage %.1f (μοντέλο %.1f)", after.usage(), before.usage()));
+        }
+        if (o.fga() != null) {
+            bits.add(String.format(Locale.US, "FGA %.1f (μοντέλο %.1f)", after.fga(), before.fga()));
+        }
+        if (o.fta() != null) {
+            bits.add(String.format(Locale.US, "FTA %.1f (μοντέλο %.1f)", after.fta(), before.fta()));
+        }
+        if (o.fg3a() != null) {
+            bits.add(String.format(Locale.US, "3PA %.1f (μοντέλο %.1f)", after.fg3a(), before.fg3a()));
+        }
+        if (o.pace() != null) {
+            bits.add(String.format(Locale.US, "pace %.1f (μοντέλο %.1f)", after.pace(), before.pace()));
+        }
+        return "Δοκιμή: " + String.join(", ", bits) + ". Κενά πεδία έμειναν ως τα υπολόγισε το μοντέλο.";
     }
 
     private static String label(Estimate e) {
@@ -263,7 +565,7 @@ public class ValueEngine {
         }
         double win = over ? probs.over() : probs.under();
         double lose = over ? probs.under() : probs.over();
-        double pModel = Math.max(0.01, Math.min(0.99, win / Math.max(1e-9, win + lose) + calibration));
+        double pModel = applyCalibration(win / Math.max(1e-9, win + lose));
         Double other = over ? row.under() : row.over();
         double pFair = other != null
                 ? (1.0 / odds) / (1.0 / odds + 1.0 / other)
@@ -274,8 +576,9 @@ public class ValueEngine {
         boolean suspicious = Math.abs(pModel - pFair) > SUSPICIOUS_GAP;
         double score = suspicious ? ev * 0.5 : ev;
         double stake = ev > 0 ? stake(pFinal, odds) : 0.0;
+        int fire = LineStreak.of(p.history(), row.stat(), row.line(), over);
         return new ValueBet(row, side, row.line(), odds, pModel, pFair, pFinal, ev, stake, score, suspicious, p,
-                explain(row, side, p, pModel, pFair, pFinal), List.of());
+                explain(row, side, p, pModel, pFair, pFinal), List.of(), fire);
     }
 
     double stake(double p, double odds) {

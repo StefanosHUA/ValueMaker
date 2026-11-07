@@ -3,6 +3,7 @@ package com.fermabets.web;
 import com.fermabets.domain.Stat;
 import com.fermabets.service.BetService;
 import com.fermabets.service.ClvService;
+import com.fermabets.service.LevelBook;
 import com.fermabets.service.ModelService;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.stereotype.Controller;
@@ -19,11 +20,13 @@ public class BetsController {
     private final ModelService models;
 
     private final ClvService clv;
+    private final LevelBook levels;
 
-    public BetsController(BetService bets, ModelService models, ClvService clv) {
+    public BetsController(BetService bets, ModelService models, ClvService clv, LevelBook levels) {
         this.clv = clv;
         this.bets = bets;
         this.models = models;
+        this.levels = levels;
     }
 
     @GetMapping("/bets")
@@ -32,6 +35,7 @@ public class BetsController {
         model.addAttribute("page", "bets");
         model.addAttribute("bets", bets.all());
         model.addAttribute("summary", bets.summary());
+        model.addAttribute("levels", levels.report());
         return "bets";
     }
 

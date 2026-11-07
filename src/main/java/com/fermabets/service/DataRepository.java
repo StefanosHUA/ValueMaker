@@ -103,6 +103,26 @@ public class DataRepository {
         }
     }
 
+    /**
+     * Home betting handicap by date|home|away (negative = home favourite). game_spread wins over game_line
+     * (line margin is expected home win, stored here as −margin).
+     */
+    public Map<String, Double> homeHandicaps(String league) {
+        Map<String, Double> out = new LinkedHashMap<>();
+        for (Map<String, Object> r : jdbc.queryForList(
+                "SELECT game_date, home, away, margin FROM game_line WHERE league=? AND margin IS NOT NULL",
+                league)) {
+            out.put(r.get("game_date") + "|" + r.get("home") + "|" + r.get("away"),
+                    -((Number) r.get("margin")).doubleValue());
+        }
+        for (Map<String, Object> r : jdbc.queryForList(
+                "SELECT game_date, home, away, home_spread FROM game_spread WHERE league=?", league)) {
+            out.put(r.get("game_date") + "|" + r.get("home") + "|" + r.get("away"),
+                    ((Number) r.get("home_spread")).doubleValue());
+        }
+        return out;
+    }
+
     /** Main handicap of the game; the bookmaker (Stoiximan) wins over RotoWire. */
     public Optional<Spread> spread(String league, LocalDate date, String home, String away) {
         return jdbc.query("SELECT home, away, home_spread, source FROM game_spread WHERE league=? AND game_date=?"
@@ -160,5 +180,48 @@ public class DataRepository {
 
     public void saveSetting(String key, String value) {
         jdbc.update("INSERT OR REPLACE INTO setting(key, value) VALUES (?,?)", key, value);
+    }
+
+    public void excludeGame(String league, LocalDate date, String home, String away, String reason) {
+        jdbc.update("INSERT OR IGNORE INTO exclude_game(league, game_date, home, away, reason) VALUES (?,?,?,?,?)",
+                league, date.toString(), home, away, reason);
+    }
+
+    /** True when this fixture was marked so results/CLV from it stay out of the books. */
+    public boolean excludedFixture(String league, LocalDate date, String team, String opp) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM exclude_game WHERE league=? AND game_date=? AND ("
+                        + "(home=? AND away=?) OR (home=? AND away=?))",
+                Integer.class, league, date.toString(), team, opp, opp, team);
+        return n != null && n > 0;
+    }
+
+    public boolean excludedPlayer(String league, LocalDate date, String playerId) {
+        if (playerId == null) {
+            return false;
+        }
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM exclude_game e JOIN player_game g ON g.league=e.league AND g.game_date=e.game_date"
+                        + " AND g.player_id=? AND ((g.team=e.home AND g.opp=e.away) OR (g.team=e.away AND g.opp=e.home))"
+                        + " WHERE e.league=? AND e.game_date=?",
+                Integer.class, playerId, league, date.toString());
+        return n != null && n > 0;
+    }
+
+    /** SQL AND-clause: pick_log/bet row is not on an excluded fixture. Alias must have league, game_date, player_id. */
+    public static String notExcludedSql(String alias) {
+        return " NOT EXISTS (SELECT 1 FROM exclude_game e JOIN player_game g ON g.league=e.league"
+                + " AND g.game_date=e.game_date AND g.player_id=" + alias + ".player_id"
+                + " AND ((g.team=e.home AND g.opp=e.away) OR (g.team=e.away AND g.opp=e.home))"
+                + " WHERE e.league=" + alias + ".league AND e.game_date=" + alias + ".game_date)";
+    }
+
+    /** Voids settled pick_log rows on excluded fixtures so they cannot re-enter the books. */
+    public int voidExcludedPicks() {
+        return jdbc.update("UPDATE pick_log SET result='VOID', actual=NULL WHERE result IN ('WIN','LOSS','PUSH') AND"
+                + " EXISTS (SELECT 1 FROM exclude_game e JOIN player_game g ON g.league=e.league"
+                + " AND g.game_date=e.game_date AND g.player_id=pick_log.player_id"
+                + " AND ((g.team=e.home AND g.opp=e.away) OR (g.team=e.away AND g.opp=e.home))"
+                + " WHERE e.league=pick_log.league AND e.game_date=pick_log.game_date)");
     }
 }

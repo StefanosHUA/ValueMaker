@@ -55,7 +55,8 @@ public class BetService {
     public int settlePending() {
         int n = 0;
         for (Bet b : all()) {
-            if (!b.result().equals("PENDING") || b.playerId() == null) {
+            if (!b.result().equals("PENDING") || b.playerId() == null
+                    || repo.excludedPlayer(b.league(), b.date(), b.playerId())) {
                 continue;
             }
             List<double[]> rows = repo.jdbc().query(
@@ -79,12 +80,22 @@ public class BetService {
         return n;
     }
 
-    /** Player has no row but the league data already covers that date, so he did not play: the bet is void. */
+    /** Player has no row but his team already has a box that date, so he did not play: the bet is void. */
     private boolean hasGameData(Bet b) {
+        String team = lastTeam(b.playerId());
+        if (team == null) {
+            return false;
+        }
         Integer c = repo.jdbc().queryForObject(
-                "SELECT COUNT(*) FROM player_game WHERE league=? AND game_date=?", Integer.class, b.league(),
-                b.date().toString());
+                "SELECT COUNT(*) FROM team_game WHERE league=? AND game_date=? AND team=?", Integer.class,
+                b.league(), b.date().toString(), team);
         return c != null && c > 0;
+    }
+
+    private String lastTeam(String playerId) {
+        List<String> teams = repo.jdbc().query("SELECT team FROM player_game WHERE player_id=? ORDER BY game_date DESC LIMIT 1",
+                (rs, i) -> rs.getString(1), playerId);
+        return teams.isEmpty() ? null : teams.get(0);
     }
 
     private boolean settle(Bet b, double actual) {

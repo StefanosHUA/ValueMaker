@@ -14,9 +14,8 @@
             <button type="submit" th:formaction="@{/admin/ingest/rotowire}">NBA injuries + handicap (RotoWire)</button>
             <button type="submit" th:formaction="@{/admin/ingest/euroleague}">Update Euroleague</button>
             <button type="submit" th:formaction="@{/admin/ingest/eurocup}">Update EuroCup</button>
-            <button type="submit" class="danger" th:formaction="@{/admin/ingest-cancel}">Cancel running job</button>
         </form>
-        <p class="muted">Incremental: NBA refreshes player/team logs, the next days' schedule and up to 200 missing referee crews
+        <p class="muted">Incremental: NBA refreshes player/team logs, the next days' schedule and up to 1500 missing referee crews
             per run; Euroleague only fetches games not yet stored (the first run takes a while).</p>
         <pre class="log" id="log">Loading...</pre>
         <span id="state" class="tag"></span>
@@ -55,7 +54,7 @@
 
     <form method="post" class="row">
         <button type="submit" th:formaction="@{/admin/retrain}">Clear model cache (retrain)</button>
-        <button type="submit" th:formaction="@{/admin/settle}">Settle pending bets</button>
+        <button type="submit" th:formaction="@{/admin/settle}">Settle pending bets + logged picks</button>
     </form>
 </main>
 <script>

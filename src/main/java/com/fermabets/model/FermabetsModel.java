@@ -244,11 +244,23 @@ public final class FermabetsModel {
 
     /** Filter layer: hit rates on each band, shrunk with Z = N/(N+K), H2H capped at its listed weight. */
     static Map.Entry<Double, List<Factor>> filters(List<Game> games, Inputs in) {
+        return filters(games, in, null);
+    }
+
+    static Map.Entry<Double, List<Factor>> filters(List<Game> games, Inputs in, double[] weights) {
         LinkedHashMap<String, Double> bases = activeWeights(in);
         String team = in.h2hTeam() == null || in.h2hTeam().isBlank() ? null : in.h2hTeam();
         List<Game> rest = new ArrayList<>(), h2h = new ArrayList<>();
-        for (Game g : games) {
-            (team != null && isOpponent(g.opp(), team) ? h2h : rest).add(g);
+        List<Double> restW = new ArrayList<>();
+        for (int i = 0; i < games.size(); i++) {
+            Game g = games.get(i);
+            double w = weightAt(weights, i);
+            if (team != null && isOpponent(g.opp(), team)) {
+                h2h.add(g);
+            } else {
+                rest.add(g);
+                restW.add(w);
+            }
         }
         List<Factor> factors = new ArrayList<>();
         double restRaw = 0, restP = 0;
@@ -257,15 +269,18 @@ public final class FermabetsModel {
             if (name.equals("h2h")) {
                 continue;
             }
-            int n = 0, hits = 0;
-            for (Game g : rest) {
+            int n = 0;
+            double nW = 0, hitsW = 0;
+            for (int i = 0; i < rest.size(); i++) {
+                Game g = rest.get(i);
                 if (mask(g, in, name)) {
                     n++;
-                    hits += g.value() > in.line() ? 1 : 0;
+                    nW += restW.get(i);
+                    hitsW += restW.get(i) * (g.value() > in.line() ? 1 : 0);
                 }
             }
             double z = credibility(n, BUHLMANN_K);
-            Double hit = n > 0 ? (double) hits / n : null;
+            Double hit = nW > 0 ? hitsW / nW : null;
             double eff = e.getValue() * z;
             String label = name.equals("home") ? (Boolean.TRUE.equals(in.home()) ? "home" : "away") : name;
             factors.add(new Factor(label, n, z, e.getValue(), eff, hit, band(in, name)));
@@ -308,8 +323,20 @@ public final class FermabetsModel {
 
     /** Similarity layer: one weight per game from how close it sits to every band. H2H games are left out. */
     static Double similarity(List<Game> games, Inputs in) {
+        return similarity(games, in, null);
+    }
+
+    static Double similarity(List<Game> games, Inputs in, double[] weights) {
         String team = in.h2hTeam() == null || in.h2hTeam().isBlank() ? null : in.h2hTeam();
-        List<Game> work = games.stream().filter(g -> team == null || !isOpponent(g.opp(), team)).toList();
+        List<Game> work = new ArrayList<>();
+        List<Integer> idx = new ArrayList<>();
+        for (int i = 0; i < games.size(); i++) {
+            Game g = games.get(i);
+            if (team == null || !isOpponent(g.opp(), team)) {
+                work.add(g);
+                idx.add(i);
+            }
+        }
         if (work.isEmpty()) {
             return null;
         }
@@ -341,6 +368,11 @@ public final class FermabetsModel {
         if (in.home() != null) {
             for (int i = 0; i < w.length; i++) {
                 w[i] *= in.home().equals(work.get(i).home()) ? 1.15 : 0.35;
+            }
+        }
+        if (weights != null) {
+            for (int i = 0; i < w.length; i++) {
+                w[i] *= weightAt(weights, idx.get(i));
             }
         }
         double total = 0, hit = 0;
@@ -396,12 +428,19 @@ public final class FermabetsModel {
     }
 
     public static Result evaluate(List<Game> games, Inputs in) {
+        return evaluate(games, in, null);
+    }
+
+    public static Result evaluate(List<Game> games, Inputs in, double[] weights) {
         if (games.isEmpty()) {
             throw new IllegalArgumentException("No games with a value for " + in.stat() + ".");
         }
-        var a = filters(games, in);
+        if (weights != null && weights.length != games.size()) {
+            throw new IllegalArgumentException("Game weights must match the game list.");
+        }
+        var a = filters(games, in, weights);
         Double pA = a.getKey();
-        Double pB = similarity(games, in);
+        Double pB = similarity(games, in, weights);
         double p;
         if (pA == null && pB == null) {
             throw new IllegalArgumentException("Both model layers failed.");
@@ -413,6 +452,10 @@ public final class FermabetsModel {
             p = BLEND_A * pA + BLEND_B * pB;
         }
         return new Result(Math.min(1.0, Math.max(0.0, p)), pA, pB, a.getValue());
+    }
+
+    private static double weightAt(double[] weights, int i) {
+        return weights == null ? 1.0 : weights[i];
     }
 
     public static Stake stake(double p, double odds, double bankroll) {

@@ -153,3 +153,13 @@ CREATE TABLE IF NOT EXISTS setting (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Games whose pick/bet results must not enter LevelBook, CLV or calibration (live odds, bad fetch, etc.).
+CREATE TABLE IF NOT EXISTS exclude_game (
+    league TEXT NOT NULL,
+    game_date TEXT NOT NULL,
+    home TEXT NOT NULL,
+    away TEXT NOT NULL,
+    reason TEXT,
+    PRIMARY KEY (league, game_date, home, away)
+);

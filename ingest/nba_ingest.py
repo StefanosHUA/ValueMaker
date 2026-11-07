@@ -1,6 +1,6 @@
 """Populate the shared SQLite DB from nba_api.
 
-Usage: python nba_ingest.py --db ../data/fermabets.db [--seasons 2024-25,2025-26] [--referee-limit 200]
+Usage: python nba_ingest.py --db ../data/fermabets.db [--seasons 2024-25,2025-26] [--referee-limit 1500]
 """
 from __future__ import annotations
 
@@ -163,7 +163,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True)
     ap.add_argument("--seasons", default="")
-    ap.add_argument("--referee-limit", type=int, default=200)
+    ap.add_argument("--referee-limit", type=int, default=1500)
     args = ap.parse_args()
     con = connect(args.db)
     if args.seasons:

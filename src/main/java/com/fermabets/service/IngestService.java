@@ -4,6 +4,8 @@ import com.fermabets.AppProperties;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PreDestroy;
+import org.springframework.beans.factory.ObjectProvider;
+
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -21,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 @Service
 public class IngestService {
     public enum Source {
-        NBA("NBA", "nba_ingest.py", List.of()),
+        NBA("NBA", "nba_ingest.py", List.of("--referee-limit", "0")),
         ROTOWIRE("RotoWire", "rotowire_ingest.py", List.of()),
         EUROLEAGUE("EL", "euroleague_ingest.py", List.of("--competition", "E")),
         EUROCUP("EC", "euroleague_ingest.py", List.of("--competition", "U"));
@@ -48,28 +50,17 @@ public class IngestService {
     private final AppProperties props;
     private final DataRepository repo;
     private final ModelService models;
+    private final ObjectProvider<ClvService> clv;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final LinkedList<String> log = new LinkedList<>();
     private volatile String current = "";
-    private volatile Process proc;
 
-    /** Kills the running ingest process (and its children). Data already committed stays. */
-    public boolean cancel() {
-        Process p = proc;
-        if (p == null || !p.isAlive()) {
-            return false;
-        }
-        p.descendants().forEach(ProcessHandle::destroyForcibly);
-        p.destroyForcibly();
-        append("Cancelled by user");
-        return true;
-    }
-
-    public IngestService(AppProperties props, DataRepository repo, ModelService models) {
+    public IngestService(AppProperties props, DataRepository repo, ModelService models, ObjectProvider<ClvService> clv) {
         this.props = props;
         this.repo = repo;
         this.models = models;
+        this.clv = clv;
     }
 
     public synchronized Status status() {
@@ -112,7 +103,6 @@ public class IngestService {
             pb.environment().put("PYTHONUNBUFFERED", "1");
             pb.environment().put("PYTHONIOENCODING", "utf-8");
             Process proc = pb.start();
-            this.proc = proc;
             try (BufferedReader r = new BufferedReader(
                     new InputStreamReader(proc.getInputStream(), StandardCharsets.UTF_8))) {
                 String line;
@@ -137,6 +127,19 @@ public class IngestService {
                     Instant.now().toString(), status, detail, id);
             append("Finished: " + status);
             running.set(false);
+            ClvService closer = clv.getIfAvailable();
+            if (closer != null && "OK".equals(status)) {
+                try {
+                    int n = closer.settlePicks();
+                    if (n > 0) {
+                        models.invalidate();
+                        closer.refit();
+                        append("Settled " + n + " logged picks from box scores.");
+                    }
+                } catch (RuntimeException e) {
+                    append("Settle after ingest failed: " + e.getMessage());
+                }
+            }
         }
     }
 

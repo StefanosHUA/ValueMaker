@@ -14,12 +14,15 @@ public class AdminController {
     private final SettingsService settings;
     private final ModelService models;
     private final BetService bets;
+    private final ClvService clv;
 
-    public AdminController(IngestService ingest, SettingsService settings, ModelService models, BetService bets) {
+    public AdminController(IngestService ingest, SettingsService settings, ModelService models, BetService bets,
+                           ClvService clv) {
         this.ingest = ingest;
         this.settings = settings;
         this.models = models;
         this.bets = bets;
+        this.clv = clv;
     }
 
     @GetMapping
@@ -37,12 +40,6 @@ public class AdminController {
     public String start(@PathVariable String source, RedirectAttributes ra) {
         IngestService.Source s = IngestService.Source.valueOf(source.toUpperCase());
         ra.addFlashAttribute("message", ingest.start(s) ? "Started " + s : "An ingestion is already running.");
-        return "redirect:/admin";
-    }
-
-    @PostMapping("/ingest-cancel")
-    public String cancel(RedirectAttributes ra) {
-        ra.addFlashAttribute("message", ingest.cancel() ? "Ingest cancelled." : "Nothing is running.");
         return "redirect:/admin";
     }
 
@@ -76,7 +73,12 @@ public class AdminController {
 
     @PostMapping("/settle")
     public String settle(RedirectAttributes ra) {
-        ra.addFlashAttribute("message", "Settled " + bets.settlePending() + " bets.");
+        int betsN = bets.settlePending();
+        int picksN = clv.settlePicks();
+        models.invalidate();
+        clv.refit();
+        ra.addFlashAttribute("message",
+                "Settled " + betsN + " placed bets and " + picksN + " logged picks from box scores.");
         return "redirect:/admin";
     }
 }

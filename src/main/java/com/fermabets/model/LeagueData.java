@@ -204,6 +204,16 @@ public final class LeagueData {
         return byPlayer.getOrDefault(playerId, List.of());
     }
 
+    /** Final score margin for the team (positive = won). NaN if the opponent box is missing. */
+    public double scoreMargin(String gameId, String team) {
+        TeamGame g = tgByKey.get(gameId + "|" + team);
+        if (g == null) {
+            return Double.NaN;
+        }
+        TeamGame o = tgByKey.get(gameId + "|" + g.opp());
+        return o == null ? Double.NaN : g.pts() - o.pts();
+    }
+
     public int rowCount() {
         return byPlayer.values().stream().mapToInt(List::size).sum();
     }
